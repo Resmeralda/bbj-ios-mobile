@@ -13,12 +13,17 @@ import 'screens/technique_detail_screen.dart';
 import 'screens/nutrition_screen.dart';
 import 'screens/recovery_screen.dart';
 import 'screens/register_screen.dart';
+import 'screens/login_screen.dart';
 
 // TODO: add a redirect that sends signed-out users to /login using
 // FirebaseAuth.instance.authStateChanges() as refreshListenable.
 final appRouter = GoRouter(
-  initialLocation: '/register',
+  initialLocation: '/login',
   routes: [
+    GoRoute(
+      path: '/login',
+      builder: (context, state) => const LoginScreen(),
+    ),
     GoRoute(
       path: '/register',
       builder: (context, state) => const RegisterScreen(),

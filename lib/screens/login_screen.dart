@@ -1,79 +1,74 @@
-import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../theme.dart';
 
-class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({super.key});
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
 
   @override
-  State<RegisterScreen> createState() => _RegisterScreenState();
+  State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _RegisterScreenState extends State<RegisterScreen> {
+class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
 
   bool _hidePassword = true;
-  bool _hideConfirmPassword = true;
+  bool _isLoading = false;
 
   @override
   void dispose() {
-    _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
-    _confirmPasswordController.dispose();
     super.dispose();
   }
 
-  Future<void> _createAccount() async {
-  if (!_formKey.currentState!.validate()) {
-    return;
-  }
-
-  try {
-    final credential =
-        await FirebaseAuth.instance.createUserWithEmailAndPassword(
-      email: _emailController.text.trim(),
-      password: _passwordController.text,
-    );
-
-    await credential.user?.updateDisplayName(
-      _nameController.text.trim(),
-    );
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Account created successfully!'),
-      ),
-    );
-  } on FirebaseAuthException catch (e) {
-    if (!mounted) return;
-
-    String message = 'Unable to create account.';
-
-    if (e.code == 'email-already-in-use') {
-      message = 'An account already exists with this email.';
-    } else if (e.code == 'invalid-email') {
-      message = 'Please enter a valid email address.';
-    } else if (e.code == 'weak-password') {
-      message = 'Please choose a stronger password.';
+  Future<void> _login() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-      ),
-    );
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+
+      if (!mounted) return;
+
+      context.go('/home');
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+
+      String message = 'Unable to log in. Please check your email and password.';
+
+      if (e.code == 'invalid-email') {
+        message = 'Please enter a valid email address.';
+      } else if (e.code == 'user-disabled') {
+        message = 'This account has been disabled.';
+      } else if (e.code == 'invalid-credential') {
+        message = 'Incorrect email or password.';
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -99,7 +94,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     const SizedBox(height: 16),
 
                     const Text(
-                      'Create Account',
+                      'Welcome Back',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 30,
@@ -111,7 +106,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     const SizedBox(height: 8),
 
                     const Text(
-                      'Start tracking your BJJ progress',
+                      'Log in to continue your BJJ progress',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 16,
@@ -120,23 +115,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
 
                     const SizedBox(height: 32),
-
-                    TextFormField(
-                      controller: _nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Name',
-                        prefixIcon: Icon(Icons.person_outline),
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Please enter your name';
-                        }
-                        return null;
-                      },
-                    ),
-
-                    const SizedBox(height: 16),
 
                     TextFormField(
                       controller: _emailController,
@@ -183,61 +161,47 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return 'Please enter a password';
-                        }
-
-                        if (value.length < 6) {
-                          return 'Password must be at least 6 characters';
+                          return 'Please enter your password';
                         }
 
                         return null;
                       },
                     ),
 
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 8),
 
-                    TextFormField(
-                      controller: _confirmPasswordController,
-                      obscureText: _hideConfirmPassword,
-                      decoration: InputDecoration(
-                        labelText: 'Confirm Password',
-                        prefixIcon: const Icon(Icons.lock_outline),
-                        border: const OutlineInputBorder(),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _hideConfirmPassword
-                                ? Icons.visibility_off
-                                : Icons.visibility,
-                          ),
-                          onPressed: () {
-                            setState(() {
-                              _hideConfirmPassword =
-                                  !_hideConfirmPassword;
-                            });
-                          },
-                        ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () {
+                          // Password reset screen will be added later.
+                        },
+                        child: const Text('Forgot Password?'),
                       ),
-                      validator: (value) {
-                        if (value != _passwordController.text) {
-                          return 'Passwords do not match';
-                        }
-                        return null;
-                      },
                     ),
 
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 8),
 
                     SizedBox(
                       height: 50,
                       child: FilledButton(
-                        onPressed: _createAccount,
+                        onPressed: _isLoading ? null : _login,
                         style: FilledButton.styleFrom(
                           backgroundColor: AppColors.home,
                         ),
-                        child: const Text(
-                          'Create Account',
-                          style: TextStyle(fontSize: 16),
-                        ),
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text(
+                                'Log In',
+                                style: TextStyle(fontSize: 16),
+                              ),
                       ),
                     ),
 
@@ -247,14 +211,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         const Text(
-                          'Already have an account? ',
+                          'Don\'t have an account? ',
                           style: TextStyle(color: AppColors.muted),
                         ),
                         TextButton(
                           onPressed: () {
-                            context.go('/login');
+                            context.go('/register');
                           },
-                          child: const Text('Log In'),
+                          child: const Text('Create Account'),
                         ),
                       ],
                     ),

@@ -130,7 +130,7 @@ class _LogSessionScreenState extends State<LogSessionScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           DropdownButtonFormField<String>(
-            value: type,
+            initialValue: type,
             decoration: const InputDecoration(labelText: 'Session type'),
             items: sessionTypes
                 .map((e) => DropdownMenuItem(value: e, child: Text(e)))
