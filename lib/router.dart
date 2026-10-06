@@ -1,3 +1,7 @@
+import 'dart:async';
+
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 
 import 'shell.dart';
@@ -16,11 +20,59 @@ import 'screens/register_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/forgot_password_screen.dart';
 
-// TODO: add a redirect that sends signed-out users to /login using
-// FirebaseAuth.instance.authStateChanges() as refreshListenable.
+class GoRouterRefreshStream extends ChangeNotifier {
+  GoRouterRefreshStream(Stream<dynamic> stream) {
+    notifyListeners();
+
+    _subscription = stream.asBroadcastStream().listen(
+      (_) => notifyListeners(),
+    );
+  }
+
+  late final StreamSubscription<dynamic> _subscription;
+
+  @override
+  void dispose() {
+    _subscription.cancel();
+    super.dispose();
+  }
+}
+
 final appRouter = GoRouter(
-  initialLocation: '/login',
+  initialLocation: '/home',
+
+  refreshListenable: GoRouterRefreshStream(
+    FirebaseAuth.instance.authStateChanges(),
+  ),
+
+  redirect: (context, state) {
+    final user = FirebaseAuth.instance.currentUser;
+    final isLoggedIn = user != null;
+
+    final isLoginPage = state.matchedLocation == '/login';
+    final isRegisterPage = state.matchedLocation == '/register';
+    final isForgotPasswordPage =
+        state.matchedLocation == '/forgot-password';
+
+    final isAuthPage =
+        isLoginPage || isRegisterPage || isForgotPasswordPage;
+
+    // If the user is not logged in, keep them out of the main app.
+    if (!isLoggedIn && !isAuthPage) {
+      return '/login';
+    }
+
+    // If the user is already logged in, keep them out of
+    // login/register/password reset pages.
+    if (isLoggedIn && isAuthPage) {
+      return '/home';
+    }
+
+    return null;
+  },
+
   routes: [
+    // Authentication routes
     GoRoute(
       path: '/login',
       builder: (context, state) => const LoginScreen(),
@@ -34,9 +86,11 @@ final appRouter = GoRouter(
       builder: (context, state) => const ForgotPasswordScreen(),
     ),
 
+    // Main application routes
     StatefulShellRoute.indexedStack(
       builder: (context, state, shell) => AppShell(shell: shell),
       branches: [
+        // Home
         StatefulShellBranch(
           routes: [
             GoRoute(
@@ -57,6 +111,8 @@ final appRouter = GoRouter(
             ),
           ],
         ),
+
+        // Training
         StatefulShellBranch(
           routes: [
             GoRoute(
@@ -79,8 +135,8 @@ final appRouter = GoRouter(
                   routes: [
                     GoRoute(
                       path: ':name',
-                      builder: (_, s) => TechniqueDetailScreen(
-                        name: s.pathParameters['name']!,
+                      builder: (_, state) => TechniqueDetailScreen(
+                        name: state.pathParameters['name']!,
                       ),
                     ),
                   ],
@@ -89,6 +145,8 @@ final appRouter = GoRouter(
             ),
           ],
         ),
+
+        // Nutrition
         StatefulShellBranch(
           routes: [
             GoRoute(
@@ -97,6 +155,8 @@ final appRouter = GoRouter(
             ),
           ],
         ),
+
+        // Recovery
         StatefulShellBranch(
           routes: [
             GoRoute(

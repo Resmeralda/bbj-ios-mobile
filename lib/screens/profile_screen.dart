@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../profile_store.dart';
 import '../theme.dart';
@@ -15,6 +16,14 @@ Color beltColor(String belt) => switch (belt) {
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
+
+  Future<void> _logout(BuildContext context) async {
+    await FirebaseAuth.instance.signOut();
+
+    if (context.mounted) {
+      context.go('/login');
+    }
+  }
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -84,6 +93,17 @@ class ProfileScreen extends StatelessWidget {
               onPressed: () => context.push('/home/profile/edit'),
               icon: const Icon(Icons.edit),
               label: const Text('Edit Profile'),
+            ),
+
+            const SizedBox(height: 12),
+
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.all(16),
+              ),
+              onPressed: () => _logout(context),
+              icon: const Icon(Icons.logout),
+              label: const Text('Log Out'),
             ),
           ],
         ),
