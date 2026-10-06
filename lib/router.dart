@@ -12,12 +12,18 @@ import 'screens/techniques_screen.dart';
 import 'screens/technique_detail_screen.dart';
 import 'screens/nutrition_screen.dart';
 import 'screens/recovery_screen.dart';
+import 'screens/register_screen.dart';
 
 // TODO: add a redirect that sends signed-out users to /login using
 // FirebaseAuth.instance.authStateChanges() as refreshListenable.
 final appRouter = GoRouter(
-  initialLocation: '/home',
+  initialLocation: '/register',
   routes: [
+    GoRoute(
+      path: '/register',
+      builder: (context, state) => const RegisterScreen(),
+    ),
+
     StatefulShellRoute.indexedStack(
       builder: (context, state, shell) => AppShell(shell: shell),
       branches: [
@@ -25,15 +31,15 @@ final appRouter = GoRouter(
           routes: [
             GoRoute(
               path: '/home',
-              builder: (_, __) => const HomeScreen(),
+              builder: (_, _) => const HomeScreen(),
               routes: [
                 GoRoute(
                   path: 'profile',
-                  builder: (_, __) => const ProfileScreen(),
+                  builder: (_, _) => const ProfileScreen(),
                   routes: [
                     GoRoute(
                       path: 'edit',
-                      builder: (_, __) => const EditProfileScreen(),
+                      builder: (_, _) => const EditProfileScreen(),
                     ),
                   ],
                 ),
@@ -45,7 +51,7 @@ final appRouter = GoRouter(
           routes: [
             GoRoute(
               path: '/training',
-              builder: (_, __) => const TrainingScreen(),
+              builder: (_, _) => const TrainingScreen(),
               routes: [
                 GoRoute(
                   path: 'log',
@@ -55,11 +61,11 @@ final appRouter = GoRouter(
                 ),
                 GoRoute(
                   path: 'history',
-                  builder: (_, __) => const HistoryScreen(),
+                  builder: (_, _) => const HistoryScreen(),
                 ),
                 GoRoute(
                   path: 'techniques',
-                  builder: (_, __) => const TechniquesScreen(),
+                  builder: (_, _) => const TechniquesScreen(),
                   routes: [
                     GoRoute(
                       path: ':name',
@@ -77,7 +83,7 @@ final appRouter = GoRouter(
           routes: [
             GoRoute(
               path: '/nutrition',
-              builder: (_, __) => const NutritionScreen(),
+              builder: (_, _) => const NutritionScreen(),
             ),
           ],
         ),
@@ -85,7 +91,7 @@ final appRouter = GoRouter(
           routes: [
             GoRoute(
               path: '/recovery',
-              builder: (_, __) => const RecoveryScreen(),
+              builder: (_, _) => const RecoveryScreen(),
             ),
           ],
         ),

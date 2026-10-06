@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 
+import 'firebase_options.dart';
 import 'router.dart';
 import 'theme.dart';
 
-// TODO: when Firebase is added:
-//   WidgetsFlutterBinding.ensureInitialized();
-//   await Firebase.initializeApp();
-void main() => runApp(const BjjFitnessApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  runApp(const BjjFitnessApp());
+}
 
 class BjjFitnessApp extends StatelessWidget {
   const BjjFitnessApp({super.key});
