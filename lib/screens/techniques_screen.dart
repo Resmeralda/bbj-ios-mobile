@@ -40,7 +40,7 @@ class TechniquesContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    void _open(String name) =>
+    void open(String name) =>
         context.push('/training/techniques/${Uri.encodeComponent(name)}');
 
     return Column(
@@ -48,7 +48,7 @@ class TechniquesContent extends StatelessWidget {
       children: [
         AppCard(
           color: Colors.blueGrey.shade700,
-          onTap: () => _open('Armbar from Guard'),
+          onTap: () => open('Armbar from Guard'),
           padding: const EdgeInsets.all(20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -75,7 +75,7 @@ class TechniquesContent extends StatelessWidget {
                   backgroundColor: Colors.white,
                   foregroundColor: AppColors.ink,
                 ),
-                onPressed: () => _open('Armbar from Guard'),
+                onPressed: () => open('Armbar from Guard'),
                 icon: const Icon(Icons.play_arrow),
                 label: const Text('Watch Video'),
               ),
@@ -118,21 +118,21 @@ class TechniquesContent extends StatelessWidget {
                 '4:32',
                 'Intermediate',
                 0.6,
-                () => _open('Kimura from Side Control'),
+                () => open('Kimura from Side Control'),
               ),
               _VideoCard(
                 'Double Leg Takedown',
                 '5:18',
                 'Beginner',
                 0.2,
-                () => _open('Double Leg Takedown'),
+                () => open('Double Leg Takedown'),
               ),
               _VideoCard(
                 'Triangle Choke',
                 '6:02',
                 'Intermediate',
                 0.8,
-                () => _open('Triangle Choke'),
+                () => open('Triangle Choke'),
               ),
             ],
           ),
@@ -148,7 +148,7 @@ class TechniquesContent extends StatelessWidget {
           'Beginner',
           'Control the arm and isolate the elbow to finish.',
           true,
-          _open,
+          open,
         ),
         _Fav(
           'Kimura from Side Control',
@@ -156,7 +156,7 @@ class TechniquesContent extends StatelessWidget {
           'Intermediate',
           'Use the figure-four grip to control and submit.',
           true,
-          _open,
+          open,
         ),
         _Fav(
           'Single Leg Takedown',
@@ -164,7 +164,7 @@ class TechniquesContent extends StatelessWidget {
           'Beginner',
           'A fundamental takedown for all skill levels.',
           false,
-          _open,
+          open,
         ),
       ],
     );

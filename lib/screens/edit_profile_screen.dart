@@ -131,7 +131,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            value: ageRange,
+            initialValue: ageRange,
             decoration: const InputDecoration(labelText: 'Age range'),
             items: ageRanges
                 .map((a) => DropdownMenuItem(value: a, child: Text(a)))
