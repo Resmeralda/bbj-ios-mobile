@@ -14,6 +14,7 @@ import 'screens/nutrition_screen.dart';
 import 'screens/recovery_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/forgot_password_screen.dart';
 
 // TODO: add a redirect that sends signed-out users to /login using
 // FirebaseAuth.instance.authStateChanges() as refreshListenable.
@@ -27,6 +28,10 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/register',
       builder: (context, state) => const RegisterScreen(),
+    ),
+    GoRoute(
+      path: '/forgot-password',
+      builder: (context, state) => const ForgotPasswordScreen(),
     ),
 
     StatefulShellRoute.indexedStack(
