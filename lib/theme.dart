@@ -16,8 +16,27 @@ ThemeData buildTheme() => ThemeData(
   useMaterial3: true,
   colorScheme: ColorScheme.fromSeed(seedColor: AppColors.home),
   scaffoldBackgroundColor: AppColors.background,
-  navigationBarTheme: const NavigationBarThemeData(
+  navigationBarTheme: NavigationBarThemeData(
     backgroundColor: Colors.white,
     indicatorColor: Colors.transparent,
+    // With no indicator pill, color is the only selected-state cue.
+    iconTheme: WidgetStateProperty.resolveWith(
+      (states) => IconThemeData(
+        color: states.contains(WidgetState.selected)
+            ? AppColors.home
+            : AppColors.muted,
+      ),
+    ),
+    labelTextStyle: WidgetStateProperty.resolveWith(
+      (states) => TextStyle(
+        fontSize: 12,
+        fontWeight: states.contains(WidgetState.selected)
+            ? FontWeight.w600
+            : FontWeight.w400,
+        color: states.contains(WidgetState.selected)
+            ? AppColors.home
+            : AppColors.muted,
+      ),
+    ),
   ),
 );

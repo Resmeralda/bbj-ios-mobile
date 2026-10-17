@@ -22,11 +22,7 @@ import 'screens/forgot_password_screen.dart';
 
 class GoRouterRefreshStream extends ChangeNotifier {
   GoRouterRefreshStream(Stream<dynamic> stream) {
-    notifyListeners();
-
-    _subscription = stream.asBroadcastStream().listen(
-      (_) => notifyListeners(),
-    );
+    _subscription = stream.listen((_) => notifyListeners());
   }
 
   late final StreamSubscription<dynamic> _subscription;
@@ -121,8 +117,11 @@ final appRouter = GoRouter(
               routes: [
                 GoRoute(
                   path: 'log',
+                  // `extra` is lost on web refresh / deep links, so don't hard-cast.
                   builder: (_, state) => LogSessionScreen(
-                    session: state.extra as TrainingSession?,
+                    session: state.extra is TrainingSession
+                        ? state.extra as TrainingSession
+                        : null,
                   ),
                 ),
                 GoRoute(
