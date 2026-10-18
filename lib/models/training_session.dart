@@ -75,6 +75,23 @@ class TrainingSession {
     notes: notes ?? this.notes,
   );
 
+  factory TrainingSession.fromMap(
+  String id,
+  Map<String, dynamic> m,
+) =>
+    TrainingSession(
+      id: id,
+      type: (m['type'] as String?) ?? sessionTypes.first,
+      date: DateTime.tryParse(
+            (m['date'] as String?) ?? '',
+          ) ??
+          DateTime.now(),
+      hours: (m['hours'] as num?)?.toDouble() ?? 0,
+      rounds: (m['rounds'] as num?)?.toInt() ?? 0,
+      techniques: (m['techniques'] as String?) ?? '',
+      notes: (m['notes'] as String?) ?? '',
+    );
+
   // Ready for Cloud Firestore: users/{uid}/sessions/{id}
   Map<String, dynamic> toMap() => {
     'type': type,
