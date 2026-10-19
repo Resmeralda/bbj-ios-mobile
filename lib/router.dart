@@ -130,12 +130,17 @@ final appRouter = GoRouter(
                 ),
                 GoRoute(
                   path: 'techniques',
-                  builder: (_, _) => const TechniquesScreen(),
+                  builder: (context, state) => TechniquesScreen(
+                    initialCategory:
+                        state.uri.queryParameters['category'] ?? 'All',
+                    favoritesOnly:
+                        state.uri.queryParameters['favorites'] == 'true',
+                  ),
                   routes: [
                     GoRoute(
-                      path: ':name',
+                      path: ':id',
                       builder: (_, state) => TechniqueDetailScreen(
-                        name: state.pathParameters['name']!,
+                        techniqueId: state.pathParameters['id']!,
                       ),
                     ),
                   ],
