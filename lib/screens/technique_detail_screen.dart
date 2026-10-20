@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 import '../models/technique.dart';
+import '../services/practiced_service.dart';
 import '../services/technique_service.dart';
 import '../theme.dart';
 
@@ -21,10 +22,14 @@ class TechniqueDetailScreen extends StatefulWidget {
 
 class _TechniqueDetailScreenState
     extends State<TechniqueDetailScreen> {
+  final PracticedService _practicedService = PracticedService();
+
   late Future<Technique?> _techniqueFuture;
+  late Stream<bool> _practicedStream;
 
   YoutubePlayerController? _controller;
   String? _loadedVideoId;
+  bool _updatingPracticed = false;
 
   @override
   void initState() {
@@ -35,6 +40,9 @@ class _TechniqueDetailScreenState
   void _loadTechnique() {
     _techniqueFuture =
         TechniqueService().getTechnique(widget.techniqueId);
+
+    _practicedStream =
+        _practicedService.isPracticed(widget.techniqueId);
   }
 
   @override
@@ -45,6 +53,7 @@ class _TechniqueDetailScreenState
       _controller?.close();
       _controller = null;
       _loadedVideoId = null;
+      _updatingPracticed = false;
       _loadTechnique();
     }
   }
@@ -71,6 +80,49 @@ class _TechniqueDetailScreenState
         showFullscreenButton: true,
       ),
     );
+  }
+
+  Future<void> _updatePracticed(bool currentStatus) async {
+    if (_updatingPracticed) return;
+
+    setState(() {
+      _updatingPracticed = true;
+    });
+
+    try {
+      await _practicedService.setPracticed(
+        widget.techniqueId,
+        !currentStatus,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            currentStatus
+                ? 'Technique removed from practiced.'
+                : 'Technique marked as practiced!',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not update practiced status. Please try again.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _updatingPracticed = false;
+        });
+      }
+    }
   }
 
   @override
@@ -183,6 +235,67 @@ class _TechniqueDetailScreenState
               const SizedBox(height: 8),
 
               Text(technique.description),
+
+              const SizedBox(height: 24),
+
+              StreamBuilder<bool>(
+                stream: _practicedStream,
+                builder: (context, practicedSnapshot) {
+                  if (practicedSnapshot.hasError) {
+                    return const Text(
+                      'Could not load practiced status.',
+                    );
+                  }
+
+                  if (!practicedSnapshot.hasData) {
+                    return const Center(
+                      child: CircularProgressIndicator(),
+                    );
+                  }
+
+                  final isPracticed = practicedSnapshot.data!;
+
+                  return SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _updatingPracticed
+                          ? null
+                          : () => _updatePracticed(isPracticed),
+                      icon: _updatingPracticed
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : Icon(
+                              isPracticed
+                                  ? Icons.check_circle
+                                  : Icons.check_circle_outline,
+                            ),
+                      label: Text(
+                        isPracticed
+                            ? 'Practiced - Tap to Undo'
+                            : 'Mark as Practiced',
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isPracticed
+                            ? AppColors.techniques
+                            : null,
+                        foregroundColor: isPracticed
+                            ? Colors.white
+                            : null,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 16,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+
+              const SizedBox(height: 16),
             ],
           ),
         );
