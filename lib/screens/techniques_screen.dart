@@ -117,6 +117,7 @@ class _TechniquesScreenState extends State<TechniquesScreen> {
         showSearch = !showSearch;
         if (!showSearch) search = '';
       }),
+      bodyPadding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       tabs: filters,
       tab: tab,
       onTab: (index) => setState(() => tab = index),
@@ -137,32 +138,13 @@ class _TechniquesScreenState extends State<TechniquesScreen> {
           ),
           const SizedBox(height: 12),
         ],
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            TextButton.icon(
-              onPressed: _showDifficultyFilters,
-              icon: Icon(
-                Icons.tune,
-                color: selectedDifficulties.isEmpty
-                    ? AppColors.muted
-                    : AppColors.techniques,
-              ),
-              label: Text(
-                selectedDifficulties.isEmpty
-                    ? 'Filter'
-                    : 'Filter (${selectedDifficulties.length})',
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
         TechniquesContent(
           category: filters[tab],
           showOverview: false,
           favoritesOnly: widget.favoritesOnly,
           searchQuery: search,
           selectedDifficulties: selectedDifficulties,
+          onFilter: _showDifficultyFilters,
         ),
       ],
     );
@@ -176,6 +158,7 @@ class TechniquesContent extends StatefulWidget {
   final bool favoritesOnly;
   final String searchQuery;
   final Set<String> selectedDifficulties;
+  final VoidCallback? onFilter;
 
   const TechniquesContent({
     super.key,
@@ -184,6 +167,7 @@ class TechniquesContent extends StatefulWidget {
     this.favoritesOnly = false,
     this.searchQuery = '',
     this.selectedDifficulties = const {},
+    this.onFilter,
   });
 
   @override
@@ -301,9 +285,6 @@ class _TechniquesContentState extends State<TechniquesContent> {
                 .where((technique) => favoriteIds.contains(technique.id))
                 .toList();
             final browse = widget.favoritesOnly ? favorites : techniques;
-            final visible = (widget.showOverview || !showAll)
-                ? browse.take(4).toList()
-                : browse;
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -362,12 +343,47 @@ class _TechniquesContentState extends State<TechniquesContent> {
                   const SizedBox(height: 12),
                 ],
                 if (!widget.favoritesOnly) ...[
-                  SectionHeader(
-                    widget.showOverview ? 'Continue Learning' : 'Browse Techniques',
-                    action: widget.showOverview ? 'View All' : null,
-                    actionColor: AppColors.techniques,
-                    onAction: widget.showOverview ? () => _openLibrary() : null,
-                  ),
+                  if (widget.showOverview)
+                    SectionHeader(
+                      'Continue Learning',
+                      action: 'View All',
+                      actionColor: AppColors.techniques,
+                      onAction: () => _openLibrary(),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Browse Techniques',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.ink,
+                              ),
+                            ),
+                          ),
+                          if (widget.onFilter != null)
+                            TextButton.icon(
+                              onPressed: widget.onFilter,
+                              icon: Icon(
+                                Icons.tune,
+                                size: 20,
+                                color: widget.selectedDifficulties.isEmpty
+                                    ? AppColors.muted
+                                    : AppColors.techniques,
+                              ),
+                              label: Text(
+                                widget.selectedDifficulties.isEmpty
+                                    ? 'Filter'
+                                    : 'Filter (${widget.selectedDifficulties.length})',
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   if (browse.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(16),
@@ -400,6 +416,11 @@ class _TechniquesContentState extends State<TechniquesContent> {
                             ? 4
                             : constraints.maxWidth >= 550 ? 3 : 2;
                         final cardWidth = (constraints.maxWidth - (columns - 1) * 12) / columns;
+                        final initialCount = columns == 4 ? 7 : 5;
+
+                        final visible = showAll
+                            ? browse
+                            : browse.take(initialCount).toList();
                         return Wrap(
                           spacing: 12,
                           runSpacing: 12,
@@ -415,7 +436,7 @@ class _TechniquesContentState extends State<TechniquesContent> {
                                       technique, favoriteIds.contains(technique.id)),
                                 ),
                               ),
-                            if (browse.length > 4)
+                            if (browse.length > initialCount)
                               SizedBox(
                                 width: cardWidth,
                                 height: 172,
@@ -434,7 +455,7 @@ class _TechniquesContentState extends State<TechniquesContent> {
                                         Text(showAll ? 'Show Less' : 'Show More',
                                             style: const TextStyle(fontWeight: FontWeight.bold)),
                                         if (!showAll)
-                                          Text('${browse.length - 4} more',
+                                          Text('${browse.length - initialCount} more',
                                               style: const TextStyle(color: AppColors.muted)),
                                       ],
                                     ),
@@ -610,7 +631,7 @@ class _Fav extends StatelessWidget {
               children: [
                 Text(technique.name,
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                Text('${technique.category} • ${technique.difficulty}',
+                Text('${technique.category} \u2022 ${technique.difficulty}',
                     style: const TextStyle(color: AppColors.muted, fontSize: 12)),
                 Text(technique.description,
                     maxLines: 2,
