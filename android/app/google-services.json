@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "546255139861",
+    "project_id": "bjj-fitness-7b0c4",
+    "storage_bucket": "bjj-fitness-7b0c4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:546255139861:android:5a31a1f9f91506feafca1c",
+        "android_client_info": {
+          "package_name": "com.example.bjj_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "546255139861-mv3ugc7rnd4ecmjpoh65hr7pmg0tbhpn.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDKioUJN6f66mEI_exR9aM3yix9HSVsing"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "546255139861-mv3ugc7rnd4ecmjpoh65hr7pmg0tbhpn.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "546255139861-e9f4h0nmrib2c3ofu5ht72hlim9k6ddc.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.bjjApp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

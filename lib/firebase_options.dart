@@ -21,17 +21,11 @@ class DefaultFirebaseOptions {
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for android - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return android;
       case TargetPlatform.iOS:
         return ios;
       case TargetPlatform.macOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for macos - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return macos;
       case TargetPlatform.windows:
         return windows;
       case TargetPlatform.linux:
@@ -71,6 +65,23 @@ class DefaultFirebaseOptions {
     messagingSenderId: '546255139861',
     projectId: 'bjj-fitness-7b0c4',
     authDomain: 'bjj-fitness-7b0c4.firebaseapp.com',
+    storageBucket: 'bjj-fitness-7b0c4.firebasestorage.app',
+  );
+  static const FirebaseOptions macos = FirebaseOptions(
+    apiKey: 'AIzaSyA1VlJ5HsKeZ1aeefpB2LXxo1sl0JYjrnM',
+    appId: '1:546255139861:ios:9f293edd53de7ac1afca1c',
+    messagingSenderId: '546255139861',
+    projectId: 'bjj-fitness-7b0c4',
+    storageBucket: 'bjj-fitness-7b0c4.firebasestorage.app',
+    iosClientId: '546255139861-e9f4h0nmrib2c3ofu5ht72hlim9k6ddc.apps.googleusercontent.com',
+    iosBundleId: 'com.example.bjjApp',
+  );
+
+  static const FirebaseOptions android = FirebaseOptions(
+    apiKey: 'AIzaSyDKioUJN6f66mEI_exR9aM3yix9HSVsing',
+    appId: '1:546255139861:android:5a31a1f9f91506feafca1c',
+    messagingSenderId: '546255139861',
+    projectId: 'bjj-fitness-7b0c4',
     storageBucket: 'bjj-fitness-7b0c4.firebasestorage.app',
   );
 }
