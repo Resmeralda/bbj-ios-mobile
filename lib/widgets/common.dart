@@ -12,6 +12,7 @@ class ScreenScaffold extends StatelessWidget {
   final int tab;
   final ValueChanged<int>? onTab;
   final List<Widget> children;
+  final EdgeInsetsGeometry bodyPadding;
 
   const ScreenScaffold({
     super.key,
@@ -23,6 +24,7 @@ class ScreenScaffold extends StatelessWidget {
     this.tabs = const [],
     this.tab = 0,
     this.onTab,
+    this.bodyPadding = const EdgeInsets.all(16),
   });
 
   @override
@@ -60,32 +62,38 @@ class ScreenScaffold extends StatelessWidget {
                 ),
                 if (tabs.isNotEmpty) ...[
                   const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      for (var i = 0; i < tabs.length; i++)
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () => onTab?.call(i),
-                            child: Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 3),
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: i == tab ? Colors.white : Colors.black26,
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (var i = 0; i < tabs.length; i++)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: Material(
+                              color: i == tab ? Colors.white : Colors.black26,
+                              borderRadius: BorderRadius.circular(12),
+                              child: InkWell(
                                 borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                tabs[i],
-                                style: TextStyle(
-                                  color: i == tab
-                                      ? AppColors.ink
-                                      : Colors.white,
+                                onTap: () => onTab?.call(i),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                  child: Text(
+                                    tabs[i],
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    style: TextStyle(
+                                      color: i == tab ? AppColors.ink : Colors.white,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ],
               ],
@@ -98,7 +106,7 @@ class ScreenScaffold extends StatelessWidget {
                 borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
               ),
               child: ListView(
-                padding: const EdgeInsets.all(16),
+                padding: bodyPadding,
                 children: children,
               ),
             ),
