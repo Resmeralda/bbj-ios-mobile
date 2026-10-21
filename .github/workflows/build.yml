@@ -28,10 +28,23 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      
       - name: Run Flutter analysis
         run: flutter analyze --no-fatal-infos --no-fatal-warnings || true
+
+      - name: Verify SonarQube token
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "ERROR: SONAR_TOKEN is not available"
+            exit 1
+          else
+            echo "SUCCESS: SONAR_TOKEN is available"
+          fi
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v8
         env:
-          SONAR_TOKEN: $&#123;&#123; secrets.SONAR_TOKEN &#125;&#125;
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
