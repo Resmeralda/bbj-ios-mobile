@@ -6,6 +6,7 @@ import '../models/training_session.dart' show formatDate;
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/form_helpers.dart';
+import '../data/collection_store.dart';
 
 // ───────────────────── Progress (food log + weight log) ─────────────────────
 
@@ -629,58 +630,67 @@ class _GoalsFormState extends State<_GoalsForm> {
 // ───────────────────────── Recipes ─────────────────────────
 
 class NutritionRecipesTab extends StatelessWidget {
-  const NutritionRecipesTab({super.key});
+  const NutritionRecipesTab({super.key, this.store});
+
+  final CollectionStore<Recipe>? store;
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: recipeStore,
-    builder: (context, _) {
-      final recipes = recipeStore.items;
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AddButton(
-            label: 'Add Recipe',
-            color: AppColors.nutrition,
-            onPressed: () => showFormSheet(context, const _RecipeForm()),
-          ),
-          if (recipeStore.error != null) EmptyState(recipeStore.error!),
-          if (recipes.isEmpty && recipeStore.error == null)
-            EmptyState(
-              recipeStore.loading
-                  ? 'Loading…'
-                  : 'No recipes yet. Tap Add Recipe to save your first one.',
-            ),
-          for (final r in recipes)
-            EntryTile(
-              icon: Icons.menu_book,
+  Widget build(BuildContext context) {
+    final activeStore = store ?? recipeStore;
+
+    return ListenableBuilder(
+      listenable: activeStore,
+      builder: (context, _) {
+        final recipes = activeStore.items;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AddButton(
+              label: 'Add Recipe',
               color: AppColors.nutrition,
-              title: r.name,
-              subtitle: '${r.calories} cal  •  ${r.protein} g protein',
-              extra: '${r.ingredientList.length} ingredients',
-              onTap: () => showFormSheet(
-                context,
-                _RecipeDetail(
-                  recipe: r,
-                  onEdit: () =>
-                      showFormSheet(context, _RecipeForm(existing: r)),
-                  onDelete: () async {
-                    if (await confirmDelete(context, 'recipe')) {
-                      recipeStore.delete(r.id);
-                    }
-                  },
-                ),
-              ),
-              onDelete: () async {
-                if (await confirmDelete(context, 'recipe')) {
-                  recipeStore.delete(r.id);
-                }
-              },
+              onPressed: () =>
+                  showFormSheet(context, _RecipeForm(store: activeStore)),
             ),
-        ],
-      );
-    },
-  );
+            if (activeStore.error != null) EmptyState(activeStore.error!),
+            if (recipes.isEmpty && activeStore.error == null)
+              EmptyState(
+                activeStore.loading
+                    ? 'Loading…'
+                    : 'No recipes yet. Tap Add Recipe to save your first one.',
+              ),
+            for (final r in recipes)
+              EntryTile(
+                icon: Icons.menu_book,
+                color: AppColors.nutrition,
+                title: r.name,
+                subtitle: '${r.calories} cal  •  ${r.protein} g protein',
+                extra: '${r.ingredientList.length} ingredients',
+                onTap: () => showFormSheet(
+                  context,
+                  _RecipeDetail(
+                    recipe: r,
+                    onEdit: () => showFormSheet(
+                      context,
+                      _RecipeForm(existing: r, store: activeStore),
+                    ),
+                    onDelete: () async {
+                      if (await confirmDelete(context, 'recipe')) {
+                        activeStore.delete(r.id);
+                      }
+                    },
+                  ),
+                ),
+                onDelete: () async {
+                  if (await confirmDelete(context, 'recipe')) {
+                    activeStore.delete(r.id);
+                  }
+                },
+              ),
+          ],
+        );
+      },
+    );
+  }
 }
 
 class _RecipeDetail extends StatelessWidget {
@@ -757,7 +767,9 @@ class _RecipeDetail extends StatelessWidget {
 
 class _RecipeForm extends StatefulWidget {
   final Recipe? existing;
-  const _RecipeForm({this.existing});
+  final CollectionStore<Recipe> store;
+
+  const _RecipeForm({this.existing, required this.store});
   @override
   State<_RecipeForm> createState() => _RecipeFormState();
 }
@@ -787,9 +799,10 @@ class _RecipeFormState extends State<_RecipeForm> {
 
   void _save() {
     if (!_key.currentState!.validate()) return;
-    recipeStore.save(
+
+    widget.store.save(
       Recipe(
-        id: widget.existing?.id ?? recipeStore.newId(),
+        id: widget.existing?.id ?? widget.store.newId(),
         name: name.text.trim(),
         calories: (double.tryParse(calories.text) ?? 0).round(),
         protein: (double.tryParse(protein.text) ?? 0).round(),
@@ -797,6 +810,7 @@ class _RecipeFormState extends State<_RecipeForm> {
         steps: steps.text.trim(),
       ),
     );
+
     Navigator.of(context).pop();
   }
 

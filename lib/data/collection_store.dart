@@ -1,3 +1,4 @@
+
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -40,6 +41,7 @@ class CollectionStore<T> extends ChangeNotifier {
   /// Call whenever the signed-in user changes (null = signed out).
   void bind(String? uid) {
     if (uid == _uid) return;
+
     _sub?.cancel();
     _sub = null;
     _uid = uid;
@@ -54,9 +56,11 @@ class CollectionStore<T> extends ChangeNotifier {
 
     loading = true;
     notifyListeners();
+
     _sub = _col!.snapshots().listen(
       (snap) {
         final list = <T>[];
+
         for (final d in snap.docs) {
           try {
             list.add(fromMap(d.id, d.data()));
@@ -64,6 +68,7 @@ class CollectionStore<T> extends ChangeNotifier {
             debugPrint('Skipping bad $path/${d.id}: $e');
           }
         }
+
         list.sort(compare);
         _items = list;
         loading = false;
