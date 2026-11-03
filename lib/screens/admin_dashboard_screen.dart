@@ -28,6 +28,18 @@ class _VideoSubmission {
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final Color adminColor = const Color(0xFF588564);
 
+  String selectedFilter = 'All';
+
+  List<_VideoSubmission> get filteredSubmissions {
+    if (selectedFilter == 'All') {
+      return submissions;
+    }
+
+    return submissions
+        .where((video) => video.status == selectedFilter)
+        .toList();
+  }
+
   final List<_VideoSubmission> submissions = [
     _VideoSubmission(
       title: 'Armbar from Guard',
@@ -146,7 +158,36 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
           const SizedBox(height: 12),
 
-          for (final video in submissions) _videoCard(video),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final filter in ['All', 'Pending', 'Approved', 'Rejected'])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(filter),
+                      selected: selectedFilter == filter,
+                      onSelected: (_) {
+                        setState(() {
+                          selectedFilter = filter;
+                        });
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          if (filteredSubmissions.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: Text('No submissions in this category.')),
+            ),
+
+          for (final video in filteredSubmissions) _videoCard(video),
 
           const SizedBox(height: 16),
 
@@ -260,6 +301,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
             ),
 
+            if (video.status != 'Pending') ...[
+              const SizedBox(height: 12),
+              TextButton.icon(
+                onPressed: () => updateStatus(video, 'Pending'),
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Reopen for Review'),
+              ),
+            ],
+
             if (video.status == 'Pending') ...[
               const SizedBox(height: 16),
               Row(
@@ -286,9 +336,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
             ],
           ],
-        ),
-      ),
-    );
+        ), // Column
+      ), // Padding
+    ); // Card
   }
 }
 
