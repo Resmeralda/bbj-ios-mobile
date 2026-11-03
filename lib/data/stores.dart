@@ -58,13 +58,18 @@ final noteStore = CollectionStore<RecoveryNote>(
 
 /// Nutrition goals: one document at users/{uid}/settings/nutrition.
 class NutritionGoalsStore extends ChangeNotifier {
+  NutritionGoalsStore({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
   NutritionGoals goals = const NutritionGoals();
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _sub;
   String? _uid;
 
   DocumentReference<Map<String, dynamic>>? get _doc => _uid == null
       ? null
-      : FirebaseFirestore.instance
+      : _firestore
             .collection('users')
             .doc(_uid)
             .collection('settings')

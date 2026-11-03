@@ -13,7 +13,10 @@ class CollectionStore<T> extends ChangeNotifier {
     required this.toMap,
     required this.idOf,
     required this.compare,
-  });
+    FirebaseFirestore? firestore,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
 
   final String path;
   final T Function(String id, Map<String, dynamic> data) fromMap;
@@ -32,10 +35,7 @@ class CollectionStore<T> extends ChangeNotifier {
 
   CollectionReference<Map<String, dynamic>>? get _col => _uid == null
       ? null
-      : FirebaseFirestore.instance
-            .collection('users')
-            .doc(_uid)
-            .collection(path);
+      : _firestore.collection('users').doc(_uid).collection(path);
 
   /// Call whenever the signed-in user changes (null = signed out).
   void bind(String? uid) {
