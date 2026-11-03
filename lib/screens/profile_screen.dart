@@ -97,6 +97,19 @@ class ProfileScreen extends StatelessWidget {
 
             const SizedBox(height: 12),
 
+            // Temporary Admin Dashboard access for Sprint 4 demo
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.all(16),
+                foregroundColor: AppColors.home,
+              ),
+              onPressed: () => context.push('/home/profile/admin'),
+              icon: const Icon(Icons.admin_panel_settings_outlined),
+              label: const Text('Admin Dashboard'),
+            ),
+
+            const SizedBox(height: 12),
+
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.all(16),

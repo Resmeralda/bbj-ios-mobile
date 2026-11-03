@@ -19,6 +19,7 @@ import 'screens/recovery_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/forgot_password_screen.dart';
+import 'screens/admin_dashboard_screen.dart';
 
 class GoRouterRefreshStream extends ChangeNotifier {
   GoRouterRefreshStream(Stream<dynamic> stream) {
@@ -100,6 +101,10 @@ final appRouter = GoRouter(
                     GoRoute(
                       path: 'edit',
                       builder: (_, _) => const EditProfileScreen(),
+                    ),
+                    GoRoute(
+                      path: 'admin',
+                      builder: (_, _) => const AdminDashboardScreen(),
                     ),
                   ],
                 ),
