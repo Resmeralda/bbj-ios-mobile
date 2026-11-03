@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 
 import 'firebase_options.dart';
+import 'data/stores.dart';
 import 'profile_store.dart';
 import 'router.dart';
 import 'session_store.dart';
@@ -18,8 +19,13 @@ Future<void> main() async {
   String? lastUid;
   void syncStores(User? user) {
     if (user?.uid == lastUid) return;
+
     lastUid = user?.uid;
+    
+debugPrint('Firebase user UID: ${user?.uid}');
+
     sessionStore.bind(user?.uid);
+    bindUserData(user?.uid);
     profileStore.reset(name: user?.displayName);
   }
 
