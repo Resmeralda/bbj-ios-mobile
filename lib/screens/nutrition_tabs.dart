@@ -451,47 +451,61 @@ class _FoodFormState extends State<_FoodForm> {
 // ───────────────────────── Goals ─────────────────────────
 
 class NutritionGoalsTab extends StatelessWidget {
-  const NutritionGoalsTab({super.key});
+  const NutritionGoalsTab({super.key, this.store});
+
+  final NutritionGoalsStore? store;
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: goalsStore,
-    builder: (context, _) {
-      final g = goalsStore.goals;
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AddButton(
-            label: 'Edit Goals',
-            icon: Icons.edit,
-            color: AppColors.nutrition,
-            onPressed: () => showFormSheet(context, _GoalsForm(goals: g)),
-          ),
-          _GoalRow(
-            Icons.local_fire_department,
-            'Daily calories',
-            '${g.calories} cal',
-            Colors.deepOrange,
-          ),
-          _GoalRow(Icons.egg_alt, 'Protein', '${g.protein} g', Colors.blue),
-          _GoalRow(Icons.grain, 'Carbs', '${g.carbs} g', Colors.amber.shade800),
-          _GoalRow(Icons.opacity, 'Fat', '${g.fat} g', Colors.purple),
-          _GoalRow(
-            Icons.water_drop,
-            'Water',
-            '${g.waterOz} oz',
-            Colors.lightBlue,
-          ),
-          _GoalRow(
-            Icons.flag,
-            'Goal weight',
-            g.goalWeight > 0 ? '${oneDecimal(g.goalWeight)} lbs' : 'Not set',
-            AppColors.nutrition,
-          ),
-        ],
-      );
-    },
-  );
+  Widget build(BuildContext context) {
+    final activeStore = store ?? goalsStore;
+
+    return ListenableBuilder(
+      listenable: activeStore,
+      builder: (context, _) {
+        final g = activeStore.goals;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AddButton(
+              label: 'Edit Goals',
+              icon: Icons.edit,
+              color: AppColors.nutrition,
+              onPressed: () => showFormSheet(
+                context,
+                _GoalsForm(goals: g, store: activeStore),
+              ),
+            ),
+            _GoalRow(
+              Icons.local_fire_department,
+              'Daily calories',
+              '${g.calories} cal',
+              Colors.deepOrange,
+            ),
+            _GoalRow(Icons.egg_alt, 'Protein', '${g.protein} g', Colors.blue),
+            _GoalRow(
+              Icons.grain,
+              'Carbs',
+              '${g.carbs} g',
+              Colors.amber.shade800,
+            ),
+            _GoalRow(Icons.opacity, 'Fat', '${g.fat} g', Colors.purple),
+            _GoalRow(
+              Icons.water_drop,
+              'Water',
+              '${g.waterOz} oz',
+              Colors.lightBlue,
+            ),
+            _GoalRow(
+              Icons.flag,
+              'Goal weight',
+              g.goalWeight > 0 ? '${oneDecimal(g.goalWeight)} lbs' : 'Not set',
+              AppColors.nutrition,
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
 
 class _GoalRow extends StatelessWidget {
@@ -520,7 +534,9 @@ class _GoalRow extends StatelessWidget {
 
 class _GoalsForm extends StatefulWidget {
   final NutritionGoals goals;
-  const _GoalsForm({required this.goals});
+  final NutritionGoalsStore store;
+
+  const _GoalsForm({required this.goals, required this.store});
   @override
   State<_GoalsForm> createState() => _GoalsFormState();
 }
@@ -553,7 +569,7 @@ class _GoalsFormState extends State<_GoalsForm> {
 
   void _save() {
     if (!_key.currentState!.validate()) return;
-    goalsStore.save(
+    widget.store.save(
       NutritionGoals(
         calories: int.parse(calories.text),
         protein: int.parse(protein.text),
