@@ -334,39 +334,63 @@ class _WeightFormState extends State<_WeightForm> {
 
 class _FoodForm extends StatefulWidget {
   final FoodEntry? existing;
-  const _FoodForm({this.existing});
+  final String? initialMeal;
+  final DateTime? initialDate;
+
+  const _FoodForm({this.existing, this.initialMeal, this.initialDate});
+
   @override
   State<_FoodForm> createState() => _FoodFormState();
 }
 
 class _FoodFormState extends State<_FoodForm> {
   final _key = GlobalKey<FormState>();
-  late final TextEditingController name, calories, protein;
+
+  late final TextEditingController name, calories, protein, carbs, fat;
   late DateTime date;
   late String meal;
 
   @override
   void initState() {
     super.initState();
+
     final f = widget.existing;
+
     name = TextEditingController(text: f?.name ?? '');
+
     calories = TextEditingController(
       text: (f == null || f.calories == 0) ? '' : '${f.calories}',
     );
+
     protein = TextEditingController(
       text: (f == null || f.protein == 0) ? '' : '${f.protein}',
     );
-    date = f?.date ?? DateTime.now();
+
+    carbs = TextEditingController(
+      text: (f == null || f.carbs == 0) ? '' : '${f.carbs}',
+    );
+
+    fat = TextEditingController(
+      text: (f == null || f.fat == 0) ? '' : '${f.fat}',
+    );
+
+    // Use the existing entry's date when editing.
+    // Otherwise, use the date selected in Food History.
+    date = f?.date ?? widget.initialDate ?? DateTime.now();
+
     final hour = DateTime.now().hour;
-    meal =
-        f?.meal ??
-        (hour < 11
-            ? 'Breakfast'
-            : hour < 15
-            ? 'Lunch'
-            : hour < 21
-            ? 'Dinner'
-            : 'Snack');
+
+    final defaultMeal = hour < 11
+        ? 'Breakfast'
+        : hour < 15
+        ? 'Lunch'
+        : hour < 21
+        ? 'Dinner'
+        : 'Snack';
+
+    // Existing entries take priority when editing.
+    // Otherwise, use the selected meal category.
+    meal = f?.meal ?? widget.initialMeal ?? defaultMeal;
   }
 
   @override
@@ -374,11 +398,14 @@ class _FoodFormState extends State<_FoodForm> {
     name.dispose();
     calories.dispose();
     protein.dispose();
+    carbs.dispose();
+    fat.dispose();
     super.dispose();
   }
 
   void _save() {
     if (!_key.currentState!.validate()) return;
+
     foodStore.save(
       FoodEntry(
         id: widget.existing?.id ?? foodStore.newId(),
@@ -387,8 +414,11 @@ class _FoodFormState extends State<_FoodForm> {
         name: name.text.trim(),
         calories: (double.tryParse(calories.text) ?? 0).round(),
         protein: (double.tryParse(protein.text) ?? 0).round(),
+        carbs: (double.tryParse(carbs.text) ?? 0).round(),
+        fat: (double.tryParse(fat.text) ?? 0).round(),
       ),
     );
+
     Navigator.of(context).pop();
   }
 
@@ -399,7 +429,30 @@ class _FoodFormState extends State<_FoodForm> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SheetTitle(widget.existing == null ? 'Log food' : 'Edit food'),
+        Row(
+          children: [
+            Expanded(
+              child: SheetTitle(
+                widget.existing == null ? 'Log food' : 'Edit food',
+              ),
+            ),
+            if (widget.existing != null)
+              IconButton(
+                icon: const Icon(Icons.delete_outline),
+                color: Colors.red,
+                tooltip: 'Delete food entry',
+                onPressed: () async {
+                  final confirmed = await confirmDelete(context, 'food entry');
+
+                  if (!confirmed || !context.mounted) return;
+
+                  foodStore.delete(widget.existing!.id);
+                  Navigator.of(context).pop();
+                },
+              ),
+          ],
+        ),
+
         Wrap(
           spacing: 8,
           children: [
@@ -411,6 +464,7 @@ class _FoodFormState extends State<_FoodForm> {
               ),
           ],
         ),
+
         TextFormField(
           controller: name,
           textCapitalization: TextCapitalization.sentences,
@@ -420,12 +474,14 @@ class _FoodFormState extends State<_FoodForm> {
           ),
           validator: (v) => requiredText(v, 'Please enter what you ate'),
         ),
+
         TextFormField(
           controller: calories,
           keyboardType: TextInputType.number,
           decoration: const InputDecoration(labelText: 'Calories (optional)'),
           validator: optionalNumber,
         ),
+
         TextFormField(
           controller: protein,
           keyboardType: TextInputType.number,
@@ -434,8 +490,25 @@ class _FoodFormState extends State<_FoodForm> {
           ),
           validator: optionalNumber,
         ),
+        TextFormField(
+          controller: carbs,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Carbohydrates in g (optional)',
+          ),
+          validator: optionalNumber,
+        ),
+        TextFormField(
+          controller: fat,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(labelText: 'Fat in g (optional)'),
+          validator: optionalNumber,
+        ),
+
         DateField(date: date, onChanged: (d) => setState(() => date = d)),
+
         const SizedBox(height: 12),
+
         FilledButton(
           style: FilledButton.styleFrom(
             backgroundColor: AppColors.nutrition,
@@ -870,4 +943,12 @@ class _RecipeFormState extends State<_RecipeForm> {
       ],
     ),
   );
+}
+
+void showAddFoodForm(BuildContext context, {String? meal, DateTime? date}) {
+  showFormSheet(context, _FoodForm(initialMeal: meal, initialDate: date));
+}
+
+void showEditFoodForm(BuildContext context, FoodEntry entry) {
+  showFormSheet(context, _FoodForm(existing: entry));
 }
