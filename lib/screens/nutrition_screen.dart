@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'nutrition_tabs.dart';
 
 class NutritionScreen extends StatefulWidget {
   const NutritionScreen({super.key});
@@ -19,8 +20,14 @@ class _NutritionScreenState extends State<NutritionScreen> {
     actionIcon: Icons.settings,
     tabs: const ['Log', 'Progress', 'Goals', 'Recipes'],
     tab: tab,
-    onTab: (i) => setState(() => tab = i), // TODO: build other tabs
-    children: [
+    onTab: (i) => setState(() => tab = i),
+    children: tab == 1
+        ? const [NutritionProgressTab()]
+        : tab == 2
+            ? const [NutritionGoalsTab()]
+            : tab == 3
+                ? const [NutritionRecipesTab()]
+                : [
       const AppCard(
         child: Row(
           children: [
