@@ -32,10 +32,13 @@ const mealTypes = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
 class FoodEntry {
   final String id;
   final DateTime date;
-  final String meal; // one of [mealTypes]
+  final String meal;
   final String name;
   final int calories;
   final int protein;
+  final int carbs;
+  final int fat;
+
   const FoodEntry({
     required this.id,
     required this.date,
@@ -43,6 +46,8 @@ class FoodEntry {
     required this.name,
     required this.calories,
     required this.protein,
+    this.carbs = 0,
+    this.fat = 0,
   });
 
   factory FoodEntry.fromMap(String id, Map<String, dynamic> m) => FoodEntry(
@@ -52,6 +57,8 @@ class FoodEntry {
     name: _str(m['name']),
     calories: _int(m['calories']),
     protein: _int(m['protein']),
+    carbs: _int(m['carbs']),
+    fat: _int(m['fat']),
   );
 
   Map<String, dynamic> toMap() => {
@@ -60,6 +67,8 @@ class FoodEntry {
     'name': name,
     'calories': calories,
     'protein': protein,
+    'carbs': carbs,
+    'fat': fat,
   };
 }
 

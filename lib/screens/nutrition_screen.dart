@@ -1,17 +1,72 @@
 import 'package:flutter/material.dart';
 
+import '../data/stores.dart';
+import '../models/health_models.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/form_helpers.dart';
 import 'nutrition_tabs.dart';
 
 class NutritionScreen extends StatefulWidget {
   const NutritionScreen({super.key});
+
   @override
   State<NutritionScreen> createState() => _NutritionScreenState();
 }
 
 class _NutritionScreenState extends State<NutritionScreen> {
   int tab = 0;
+  DateTime selectedDate = DateUtils.dateOnly(DateTime.now());
+
+  bool isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  bool get isToday => isSameDay(selectedDate, DateTime.now());
+
+  void changeDay(int days) {
+    final next = DateUtils.dateOnly(selectedDate.add(Duration(days: days)));
+
+    if (next.isAfter(DateUtils.dateOnly(DateTime.now()))) return;
+
+    setState(() => selectedDate = next);
+  }
+
+  Future<void> selectDate() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: selectedDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+    );
+
+    if (date != null && mounted) {
+      setState(() => selectedDate = date);
+    }
+  }
+
+  String get mealsHeading {
+    if (isToday) return "Today's Meals";
+
+    final yesterday = DateUtils.dateOnly(
+      DateTime.now().subtract(const Duration(days: 1)),
+    );
+
+    if (isSameDay(selectedDate, yesterday)) {
+      return "Yesterday's Meals";
+    }
+
+    const weekdays = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+
+    return "${weekdays[selectedDate.weekday - 1]}'s Meals";
+  }
 
   @override
   Widget build(BuildContext context) => ScreenScaffold(
@@ -24,163 +79,283 @@ class _NutritionScreenState extends State<NutritionScreen> {
     children: tab == 1
         ? const [NutritionProgressTab()]
         : tab == 2
-            ? const [NutritionGoalsTab()]
-            : tab == 3
-                ? const [NutritionRecipesTab()]
-                : [
-      const AppCard(
-        child: Row(
-          children: [
-            Icon(Icons.chevron_left),
-            Expanded(child: Center(child: Text('Tue, Apr 15'))),
-            Icon(Icons.calendar_month),
-          ],
-        ),
-      ),
-      AppCard(
-        child: Row(
-          children: [
-            SizedBox(
-              width: 130,
-              height: 130,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  const SizedBox.expand(
-                    child: CircularProgressIndicator(
-                      value: 1420 / 2000,
-                      strokeWidth: 12,
-                      color: AppColors.nutrition,
-                      backgroundColor: Colors.black12,
+        ? const [NutritionGoalsTab()]
+        : tab == 3
+        ? const [NutritionRecipesTab()]
+        : [
+            ListenableBuilder(
+              listenable: Listenable.merge([foodStore, goalsStore]),
+              builder: (context, _) {
+                final foods = foodStore.items
+                    .where((f) => isSameDay(f.date, selectedDate))
+                    .toList();
+
+                final calories = foods.fold<int>(
+                  0,
+                  (sum, f) => sum + f.calories,
+                );
+
+                final protein = foods.fold<int>(0, (sum, f) => sum + f.protein);
+                final carbs = foods.fold<int>(0, (sum, f) => sum + f.carbs);
+
+                final fat = foods.fold<int>(0, (sum, f) => sum + f.fat);
+
+                final goals = goalsStore.goals;
+                final calorieGoal = goals.calories;
+                final proteinGoal = goals.protein;
+                final carbsGoal = goals.carbs;
+                final fatGoal = goals.fat;
+
+                final calorieProgress = calorieGoal > 0
+                    ? (calories / calorieGoal).clamp(0.0, 1.0).toDouble()
+                    : 0.0;
+
+                final proteinProgress = proteinGoal > 0
+                    ? (protein / proteinGoal).clamp(0.0, 1.0).toDouble()
+                    : 0.0;
+
+                final carbsProgress = carbsGoal > 0
+                    ? (carbs / carbsGoal).clamp(0.0, 1.0).toDouble()
+                    : 0.0;
+
+                final fatProgress = fatGoal > 0
+                    ? (fat / fatGoal).clamp(0.0, 1.0).toDouble()
+                    : 0.0;
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Date navigation
+                    AppCard(
+                      child: Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.chevron_left),
+                            onPressed: () => changeDay(-1),
+                          ),
+                          Expanded(
+                            child: Center(
+                              child: Text(
+                                '${selectedDate.month}/${selectedDate.day}/${selectedDate.year}',
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.chevron_right),
+                            onPressed: isToday ? null : () => changeDay(1),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.calendar_month),
+                            onPressed: selectDate,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '1,420',
-                        style: TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.bold,
+
+                    // Circular calorie tracker
+                    AppCard(
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 130,
+                            height: 130,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                SizedBox.expand(
+                                  child: CircularProgressIndicator(
+                                    value: calorieProgress,
+                                    strokeWidth: 12,
+                                    color: AppColors.nutrition,
+                                    backgroundColor: Colors.black12,
+                                  ),
+                                ),
+                                Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      '$calories',
+                                      style: const TextStyle(
+                                        fontSize: 26,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      'of $calorieGoal\ncalories',
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: AppColors.muted,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              children: [
+                                _MacroProgress(
+                                  'Protein',
+                                  protein,
+                                  proteinGoal,
+                                  proteinProgress,
+                                  Colors.blue,
+                                ),
+                                _MacroProgress(
+                                  'Carbs',
+                                  carbs,
+                                  carbsGoal,
+                                  carbsProgress,
+                                  Colors.amber,
+                                ),
+                                _MacroProgress(
+                                  'Fat',
+                                  fat,
+                                  fatGoal,
+                                  fatProgress,
+                                  Colors.purple,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Meal category shortcuts
+                    Row(
+                      children: [
+                        QuickTile(
+                          Icons.restaurant,
+                          'Breakfast',
+                          Colors.red,
+                          onTap: () => showAddFoodForm(
+                            context,
+                            meal: 'Breakfast',
+                            date: selectedDate,
+                          ),
+                        ),
+                        QuickTile(
+                          Icons.restaurant,
+                          'Lunch',
+                          Colors.orange,
+                          onTap: () => showAddFoodForm(
+                            context,
+                            meal: 'Lunch',
+                            date: selectedDate,
+                          ),
+                        ),
+                        QuickTile(
+                          Icons.restaurant,
+                          'Dinner',
+                          Colors.green,
+                          onTap: () => showAddFoodForm(
+                            context,
+                            meal: 'Dinner',
+                            date: selectedDate,
+                          ),
+                        ),
+                        QuickTile(
+                          Icons.apple,
+                          'Snack',
+                          Colors.deepPurple,
+                          onTap: () => showAddFoodForm(
+                            context,
+                            meal: 'Snack',
+                            date: selectedDate,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    SectionHeader(
+                      mealsHeading,
+                      action: 'Add Food +',
+                      onAction: () =>
+                          showAddFoodForm(context, date: selectedDate),
+                    ),
+
+                    if (foodStore.loading)
+                      const Center(child: CircularProgressIndicator())
+                    else if (foodStore.error != null)
+                      EmptyState(foodStore.error!)
+                    else if (foods.isEmpty)
+                      const AppCard(
+                        child: Text('No meals logged for this day.'),
+                      )
+                    else
+                      AppCard(
+                        padding: EdgeInsets.zero,
+                        child: Column(
+                          children: [
+                            for (final meal in mealTypes)
+                              for (final food in foods.where(
+                                (f) => f.meal == meal,
+                              ))
+                                ListTile(
+                                  leading: Container(
+                                    width: 48,
+                                    height: 48,
+                                    decoration: BoxDecoration(
+                                      color: Colors.black12,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Icon(Icons.fastfood_outlined),
+                                  ),
+                                  title: Text(
+                                    food.meal,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  subtitle: Text(food.name),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text('${food.calories} cal'),
+                                      const Icon(Icons.chevron_right),
+                                    ],
+                                  ),
+                                  onTap: () => showEditFoodForm(context, food),
+                                  onLongPress: () async {
+                                    if (await confirmDelete(
+                                      context,
+                                      'food entry',
+                                    )) {
+                                      foodStore.delete(food.id);
+                                    }
+                                  },
+                                ),
+                          ],
                         ),
                       ),
-                      Text(
-                        'of 2,000\ncalories',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: AppColors.muted, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 16),
-            const Expanded(
-              child: Column(
-                children: [
-                  _Macro('Protein', 120, 150, Colors.blue),
-                  _Macro('Carbs', 140, 225, Colors.amber),
-                  _Macro('Fat', 45, 65, Colors.purple),
-                ],
-              ),
+                  ],
+                );
+              },
             ),
           ],
-        ),
-      ),
-      Row(
-        children: [
-          QuickTile(Icons.restaurant, 'Breakfast', Colors.red, onTap: () {}),
-          QuickTile(
-            Icons.restaurant,
-            'Lunch',
-            Colors.amber.shade800,
-            onTap: () {},
-          ),
-          QuickTile(Icons.restaurant, 'Dinner', Colors.green, onTap: () {}),
-          QuickTile(Icons.apple, 'Snack', Colors.deepPurple, onTap: () {}),
-        ],
-      ),
-      const SizedBox(height: 12),
-      SectionHeader(
-        'Today\'s Meals',
-        action: 'Add Food +',
-        onAction: () {},
-      ), // TODO: food logging flow
-      const AppCard(
-        padding: EdgeInsets.zero,
-        child: Column(
-          children: [
-            _Meal('Breakfast', 'Overnight oats, banana, protein powder', 380),
-            _Meal('Lunch', 'Chicken, rice, broccoli', 450),
-            _Meal('Dinner', 'Salmon, sweet potatoes, asparagus', 520),
-            _Meal('Snack', 'Greek yogurt, blueberries', 170),
-          ],
-        ),
-      ),
-      const AppCard(
-        child: Row(
-          children: [
-            Icon(Icons.water_drop, color: Colors.blue, size: 32),
-            SizedBox(width: 12),
-            Text('Water Intake', style: TextStyle(fontWeight: FontWeight.bold)),
-            SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text('64 oz / 80 oz', style: TextStyle(fontSize: 12)),
-                  ProgressBar(64 / 80, Colors.lightBlue),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-      const Row(
-        children: [
-          Expanded(
-            child: AppCard(
-              color: AppColors.tint,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Current Weight', style: TextStyle(fontSize: 12)),
-                  Text(
-                    '165 lbs',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                  Text('Goal: 150 lbs', style: TextStyle(fontSize: 12)),
-                ],
-              ),
-            ),
-          ),
-          SizedBox(width: 8),
-          Expanded(
-            child: AppCard(
-              color: Color(0xFFE6F3E8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Daily Streak', style: TextStyle(fontSize: 12)),
-                  Text(
-                    '5 days 🔥',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    ],
   );
 }
 
-class _Macro extends StatelessWidget {
+class _MacroProgress extends StatelessWidget {
   final String name;
-  final int value, target;
+  final int value;
+  final int target;
+  final double progress;
   final Color color;
-  const _Macro(this.name, this.value, this.target, this.color);
+
+  const _MacroProgress(
+    this.name,
+    this.value,
+    this.target,
+    this.progress,
+    this.color,
+  );
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -197,33 +372,8 @@ class _Macro extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 4),
-        ProgressBar(value / target, color),
+        ProgressBar(progress, color),
       ],
-    ),
-  );
-}
-
-class _Meal extends StatelessWidget {
-  final String meal, items;
-  final int cal;
-  const _Meal(this.meal, this.items, this.cal);
-
-  @override
-  Widget build(BuildContext context) => ListTile(
-    leading: Container(
-      width: 48,
-      height: 48,
-      decoration: BoxDecoration(
-        color: Colors.black12,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: const Icon(Icons.fastfood_outlined),
-    ),
-    title: Text(meal, style: const TextStyle(fontWeight: FontWeight.bold)),
-    subtitle: Text(items, style: const TextStyle(fontSize: 12)),
-    trailing: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [Text('$cal cal'), const Icon(Icons.chevron_right)],
     ),
   );
 }
