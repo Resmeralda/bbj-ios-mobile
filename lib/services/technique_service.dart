@@ -1,22 +1,25 @@
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/technique.dart';
 
 class TechniqueService {
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  TechniqueService({FirebaseFirestore? firestore})
+    : _db = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _db;
 
   Stream<List<Technique>> getTechniques() {
-    return _db.collection('techniques').snapshots().map(
-      (snapshot) => snapshot.docs
-          .map((doc) => Technique.fromMap(doc.id, doc.data()))
-          .toList(),
-    );
+    return _db
+        .collection('techniques')
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => Technique.fromMap(doc.id, doc.data()))
+              .toList(),
+        );
   }
 
-  Stream<List<Technique>> getTechniquesByCategory(
-    String category,
-  ) {
+  Stream<List<Technique>> getTechniquesByCategory(String category) {
     if (category == 'All') {
       return getTechniques();
     }
@@ -32,13 +35,9 @@ class TechniqueService {
         );
   }
 
-  Future<Technique?> getTechnique(String id) async {
-    final doc = await _db.collection('techniques').doc(id).get();
-
-    if (!doc.exists || doc.data() == null) {
-      return null;
-    }
-
-    return Technique.fromMap(doc.id, doc.data()!);
-  }
+  Stream<Technique?> watchTechnique(String id) =>
+      _db.collection('techniques').doc(id).snapshots().map((doc) {
+        final data = doc.data();
+        return data == null ? null : Technique.fromMap(doc.id, data);
+      });
 }

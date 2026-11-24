@@ -2,8 +2,11 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show ObjectKey;
 import 'package:go_router/go_router.dart';
 
+import 'data/review_store.dart';
+import 'data/role_store.dart';
 import 'profile_store.dart';
 import 'shell.dart';
 import 'screens/home_screen.dart';
@@ -24,6 +27,7 @@ import 'screens/register_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/forgot_password_screen.dart';
 import 'screens/admin_dashboard_screen.dart';
+import 'screens/trainer_access_screen.dart';
 
 class GoRouterRefreshStream extends ChangeNotifier {
   GoRouterRefreshStream(Stream<dynamic> stream) {
@@ -39,17 +43,33 @@ class GoRouterRefreshStream extends ChangeNotifier {
   }
 }
 
-final appRouter = createAppRouter(FirebaseAuth.instance);
+final appRouter = _createDefaultRouter();
+
+GoRouter _createDefaultRouter() {
+  final auth = FirebaseAuth.instance;
+  return createAppRouter(
+    auth,
+    roles: roleStore,
+    reviews: ReviewStore(
+      roles: roleStore,
+      currentUid: () => auth.currentUser?.uid,
+      accountClaims: () async => (await auth.currentUser?.getIdTokenResult(true))?.claims,
+    ),
+  );
+}
 
 GoRouter createAppRouter(
   FirebaseAuth auth, {
   ProfileStore? profiles,
+  RoleStore? roles,
+  ReviewStore? reviews,
 }) => GoRouter(
   initialLocation: '/home',
 
-  refreshListenable: GoRouterRefreshStream(
-    auth.authStateChanges(),
-  ),
+  refreshListenable: Listenable.merge([
+    GoRouterRefreshStream(auth.authStateChanges()),
+    roles,
+  ]),
 
   redirect: (context, state) {
     final user = auth.currentUser;
@@ -105,7 +125,12 @@ GoRouter createAppRouter(
               routes: [
                 GoRoute(
                   path: 'profile',
-                  builder: (_, _) => ProfileScreen(store: profiles),
+                  builder: (_, _) => ProfileScreen(
+                    store: profiles,
+                    roles: roles,
+                    auth: auth,
+                    reviews: reviews,
+                  ),
                   routes: [
                     GoRoute(
                       path: 'edit',
@@ -113,7 +138,30 @@ GoRouter createAppRouter(
                     ),
                     GoRoute(
                       path: 'admin',
-                      builder: (_, _) => const AdminDashboardScreen(),
+                      redirect: (_, _) =>
+                          reviews != null &&
+                              roles?.verifiedRoleFor(auth.currentUser?.uid) ==
+                                  UserRole.administrator
+                          ? null
+                          : '/home/profile',
+                      builder: (_, _) => AdminDashboardScreen(
+                        key: ObjectKey(roles!.access),
+                        store: reviews!,
+                      ),
+                    ),
+                    GoRoute(
+                      path: 'submissions',
+                      redirect: (_, _) =>
+                          reviews != null &&
+                              roles?.verifiedRoleFor(auth.currentUser?.uid) ==
+                                  UserRole.trainer
+                          ? null
+                          : '/home/profile',
+                      builder: (_, _) => MySubmissionsScreen(
+                        key: ObjectKey(roles!.access),
+                        store: reviews!,
+                        uid: auth.currentUser!.uid,
+                      ),
                     ),
                   ],
                 ),

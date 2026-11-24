@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../data/role_store.dart';
+import '../data/review_store.dart';
 import '../profile_store.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'trainer_access_screen.dart';
 
 Color beltColor(String belt) => switch (belt) {
   'Blue' => Colors.blue.shade700,
@@ -15,14 +18,23 @@ Color beltColor(String belt) => switch (belt) {
 };
 
 class ProfileScreen extends StatelessWidget {
-  const ProfileScreen({super.key, this.store});
+  const ProfileScreen({
+    super.key,
+    this.store,
+    this.roles,
+    this.auth,
+    this.reviews,
+  });
 
   final ProfileStore? store;
+  final RoleStore? roles;
+  final FirebaseAuth? auth;
+  final ReviewStore? reviews;
 
   ProfileStore get _profiles => store ?? profileStore;
 
   Future<void> _logout(BuildContext context) async {
-    await FirebaseAuth.instance.signOut();
+    await (auth ?? FirebaseAuth.instance).signOut();
 
     if (context.mounted) {
       context.go('/login');
@@ -31,9 +43,11 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: _profiles,
+    listenable: Listenable.merge([_profiles, roles]),
     builder: (context, _) {
       final p = _profiles.profile;
+      final uid = auth?.currentUser?.uid;
+      final role = roles?.verifiedRoleFor(uid);
       return Scaffold(
         appBar: AppBar(
           title: const Text('Profile'),
@@ -82,6 +96,15 @@ class ProfileScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
+            if (roles != null)
+              _Row(
+                Icons.badge_outlined,
+                'Role',
+                role?.label ??
+                    (roles!.statusFor(uid) == RoleStatus.loading
+                        ? 'Checking access…'
+                        : 'Role unavailable'),
+              ),
             _Row(Icons.cake, 'Age range', p.ageRange),
             _Row(
               Icons.event_repeat,
@@ -101,18 +124,39 @@ class ProfileScreen extends StatelessWidget {
               label: const Text('Edit Profile'),
             ),
 
-            const SizedBox(height: 12),
-
-            // Temporary Admin Dashboard access for Sprint 4 demo
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.all(16),
-                foregroundColor: AppColors.home,
+            if (role == UserRole.administrator) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.all(16),
+                  foregroundColor: AppColors.home,
+                ),
+                onPressed: () => context.go('/home/profile/admin'),
+                icon: const Icon(Icons.admin_panel_settings_outlined),
+                label: const Text('Admin Dashboard'),
               ),
-              onPressed: () => context.push('/home/profile/admin'),
-              icon: const Icon(Icons.admin_panel_settings_outlined),
-              label: const Text('Admin Dashboard'),
-            ),
+            ],
+            if (reviews != null &&
+                uid != null &&
+                role != UserRole.administrator) ...[
+              const SizedBox(height: 12),
+              TrainerAccessPanel(
+                key: ValueKey(uid),
+                store: reviews!,
+                uid: uid,
+                role: role,
+              ),
+              if (role == UserRole.trainer) ...[
+                OutlinedButton(
+                  onPressed: () => openSubmissionForm(context, reviews!),
+                  child: const Text('Submit Technique'),
+                ),
+                OutlinedButton(
+                  onPressed: () => context.go('/home/profile/submissions'),
+                  child: const Text('My Submissions'),
+                ),
+              ],
+            ],
 
             const SizedBox(height: 12),
 

@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
@@ -9,22 +8,25 @@ import '../theme.dart';
 
 class TechniqueDetailScreen extends StatefulWidget {
   final String techniqueId;
+  final TechniqueService? techniques;
+  final PracticedService? practiced;
 
   const TechniqueDetailScreen({
     super.key,
     required this.techniqueId,
+    this.techniques,
+    this.practiced,
   });
 
   @override
-  State<TechniqueDetailScreen> createState() =>
-      _TechniqueDetailScreenState();
+  State<TechniqueDetailScreen> createState() => _TechniqueDetailScreenState();
 }
 
-class _TechniqueDetailScreenState
-    extends State<TechniqueDetailScreen> {
-  final PracticedService _practicedService = PracticedService();
+class _TechniqueDetailScreenState extends State<TechniqueDetailScreen> {
+  late final _practicedService = widget.practiced ?? PracticedService();
+  late final _techniques = widget.techniques ?? TechniqueService();
 
-  late Future<Technique?> _techniqueFuture;
+  late Stream<Technique?> _techniqueStream;
   late Stream<bool> _practicedStream;
 
   YoutubePlayerController? _controller;
@@ -38,11 +40,9 @@ class _TechniqueDetailScreenState
   }
 
   void _loadTechnique() {
-    _techniqueFuture =
-        TechniqueService().getTechnique(widget.techniqueId);
+    _techniqueStream = _techniques.watchTechnique(widget.techniqueId);
 
-    _practicedStream =
-        _practicedService.isPracticed(widget.techniqueId);
+    _practicedStream = _practicedService.isPracticed(widget.techniqueId);
   }
 
   @override
@@ -59,12 +59,15 @@ class _TechniqueDetailScreenState
   }
 
   void _prepareVideo(String? videoUrl) {
-    if (videoUrl == null || videoUrl.isEmpty) return;
-
-    final videoId =
-        YoutubePlayerController.convertUrlToId(videoUrl);
-
-    if (videoId == null || videoId.isEmpty) return;
+    final videoId = videoUrl == null
+        ? null
+        : YoutubePlayerController.convertUrlToId(videoUrl);
+    if (videoId == null || videoId.isEmpty) {
+      _controller?.close();
+      _controller = null;
+      _loadedVideoId = null;
+      return;
+    }
 
     if (_loadedVideoId == videoId) return;
 
@@ -90,10 +93,7 @@ class _TechniqueDetailScreenState
     });
 
     try {
-      await _practicedService.setPracticed(
-        widget.techniqueId,
-        !currentStatus,
-      );
+      await _practicedService.setPracticed(widget.techniqueId, !currentStatus);
 
       if (!mounted) return;
 
@@ -111,9 +111,7 @@ class _TechniqueDetailScreenState
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Could not update practiced status. Please try again.',
-          ),
+          content: Text('Could not update practiced status. Please try again.'),
         ),
       );
     } finally {
@@ -133,33 +131,28 @@ class _TechniqueDetailScreenState
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Technique?>(
-      future: _techniqueFuture,
+    return StreamBuilder<Technique?>(
+      stream: _techniqueStream,
       builder: (context, snapshot) {
-        if (snapshot.connectionState ==
-            ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
+            body: Center(child: CircularProgressIndicator()),
           );
         }
 
         if (snapshot.hasError) {
           return const Scaffold(
-            body: Center(
-              child: Text('Could not load technique.'),
-            ),
+            body: Center(child: Text('Could not load technique.')),
           );
         }
 
         final technique = snapshot.data;
 
         if (technique == null) {
-          return const Scaffold(
-            body: Center(
-              child: Text('Technique not found.'),
-            ),
+          _prepareVideo(null);
+          return Scaffold(
+            appBar: AppBar(title: const Text('Technique Details')),
+            body: const Center(child: Text('Technique not found.')),
           );
         }
 
@@ -178,6 +171,7 @@ class _TechniqueDetailScreenState
                 borderRadius: BorderRadius.circular(16),
                 child: _controller != null
                     ? YoutubePlayer(
+                        key: ValueKey(_loadedVideoId),
                         controller: _controller!,
                         aspectRatio: 16 / 9,
                       )
@@ -187,9 +181,7 @@ class _TechniqueDetailScreenState
                         child: const Center(
                           child: Text(
                             'No video available',
-                            style: TextStyle(
-                              color: Colors.white,
-                            ),
+                            style: TextStyle(color: Colors.white),
                           ),
                         ),
                       ),
@@ -197,28 +189,20 @@ class _TechniqueDetailScreenState
 
               const SizedBox(height: 16),
 
-              Chip(
-                label: Text(
-                  'Difficulty: ${technique.difficulty}',
-                ),
-              ),
+              Chip(label: Text('Difficulty: ${technique.difficulty}')),
 
               const SizedBox(height: 8),
 
               Text(
                 'Category: ${technique.category}',
-                style: const TextStyle(
-                  color: AppColors.muted,
-                ),
+                style: const TextStyle(color: AppColors.muted),
               ),
 
               if (technique.instructor != null) ...[
                 const SizedBox(height: 8),
                 Text(
                   'Instructor: ${technique.instructor}',
-                  style: const TextStyle(
-                    color: AppColors.muted,
-                  ),
+                  style: const TextStyle(color: AppColors.muted),
                 ),
               ],
 
@@ -226,10 +210,7 @@ class _TechniqueDetailScreenState
 
               const Text(
                 'Description',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
 
               const SizedBox(height: 8),
@@ -242,15 +223,11 @@ class _TechniqueDetailScreenState
                 stream: _practicedStream,
                 builder: (context, practicedSnapshot) {
                   if (practicedSnapshot.hasError) {
-                    return const Text(
-                      'Could not load practiced status.',
-                    );
+                    return const Text('Could not load practiced status.');
                   }
 
                   if (!practicedSnapshot.hasData) {
-                    return const Center(
-                      child: CircularProgressIndicator(),
-                    );
+                    return const Center(child: CircularProgressIndicator());
                   }
 
                   final isPracticed = practicedSnapshot.data!;
@@ -265,9 +242,7 @@ class _TechniqueDetailScreenState
                           ? const SizedBox(
                               width: 18,
                               height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                              ),
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : Icon(
                               isPracticed
@@ -283,12 +258,8 @@ class _TechniqueDetailScreenState
                         backgroundColor: isPracticed
                             ? AppColors.techniques
                             : null,
-                        foregroundColor: isPracticed
-                            ? Colors.white
-                            : null,
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 16,
-                        ),
+                        foregroundColor: isPracticed ? Colors.white : null,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
                       ),
                     ),
                   );

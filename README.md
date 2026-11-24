@@ -54,6 +54,18 @@ can be used across supported platforms.
 Platform-specific code may be added when functionality requires native
 Android or iOS implementation.
 
+### BJJ-110 Phase 1 device verification
+
+Passed on the Android emulator against the local `demo-bjj-110` project.
+Disconnecting Firestore with the Admin Dashboard open redirected the user to
+Profile, removed administrator privileges, and hid the Admin Dashboard button.
+
+### BJJ-110 Phase 2 local verification
+
+Local technique workflows were verified using test records created in the
+`demo-bjj-110` Firebase emulator. Compatibility with the full production
+technique library was outside the scope of this verification.
+
 ## Related Repositories
 
 The BJJ Fitness App project is organized across multiple repositories:
