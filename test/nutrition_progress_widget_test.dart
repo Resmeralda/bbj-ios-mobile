@@ -119,6 +119,135 @@ class _DeferredFoodStore extends CollectionStore<FoodEntry> {
 }
 
 void main() {
+  for (final (tab, button, save, path) in [
+    ('Log', 'Add Food +', 'Save', 'food_log'),
+    ('Progress', 'Log Weight', 'Save', 'weights'),
+    ('Goals', 'Edit Goals', 'Save Goals', 'settings'),
+    ('Recipes', 'Add Recipe', 'Save Recipe', 'recipes'),
+  ]) {
+    testWidgets('$button rejects a draft after changing accounts', (
+      tester,
+    ) async {
+      final firestore = await _open(tester);
+      final screen = tester.widget<NutritionScreen>(
+        find.byType(NutritionScreen),
+      );
+      await _tap(tester, _tab(tab));
+      await _tap(tester, find.text(button));
+      final input = find.byType(TextFormField).first;
+      await tester.enterText(input, '123');
+      screen.food!.bind('other');
+      screen.weights!.bind('other');
+      screen.targets!.bind('other');
+      screen.recipes!.bind('other');
+      await tester.pumpAndSettle();
+      await _tap(tester, find.widgetWithText(FilledButton, save));
+      expect(find.text(staleAccountMessage), findsOneWidget);
+      expect(
+        (await firestore.collection('users/other/$path').get()).docs,
+        isEmpty,
+      );
+      expect(
+        (await firestore.collection('users/$_uid/$path').get()).docs,
+        isEmpty,
+      );
+    });
+  }
+
+  testWidgets('A recipe detail from the old account cannot start a new draft', (
+    tester,
+  ) async {
+    final firestore = await _open(tester);
+    await firestore.doc('users/$_uid/recipes/soup').set({
+      'name': 'Private soup',
+    });
+    final screen = tester.widget<NutritionScreen>(find.byType(NutritionScreen));
+    for (final action in ['Add to Food Log', 'Edit', 'Delete']) {
+      screen.recipes!.bind(_uid);
+      screen.food!.bind(_uid);
+      await tester.pumpAndSettle();
+      await _tap(tester, _tab('Recipes'));
+      await _tap(tester, find.text('Private soup'));
+      screen.recipes!.bind('other');
+      screen.food!.bind('other');
+      await tester.pumpAndSettle();
+      await _tap(tester, find.text(action));
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.text(staleAccountMessage), findsOneWidget);
+      ScaffoldMessenger.of(tester.element(find.byType(NutritionScreen)))
+          .clearSnackBars();
+      await tester.pumpAndSettle();
+    }
+    expect(
+      (await firestore.doc('users/$_uid/recipes/soup').get()).exists,
+      isTrue,
+    );
+    expect(
+      (await firestore.collection('users/other/food_log').get()).docs,
+      isEmpty,
+    );
+  });
+
+  testWidgets('Manual food logging rejects tomorrow and accepts a past day', (
+    tester,
+  ) async {
+    final firestore = await _open(tester);
+    final today = DateUtils.dateOnly(DateTime.now());
+    final tomorrow = DateUtils.addDaysToDate(today, 1);
+    final yesterday = DateUtils.addDaysToDate(today, -1);
+    await _tap(tester, find.text('Add Food +'));
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'What did you eat?'),
+      'Oats',
+    );
+    tester.widget<DateField>(find.byType(DateField)).onChanged(tomorrow);
+    await tester.pump();
+    await _tap(tester, find.widgetWithText(FilledButton, 'Save'));
+    expect(find.text('Choose today or an earlier date.'), findsOneWidget);
+    final food = firestore.collection('users/$_uid/food_log');
+    expect((await food.get()).docs, isEmpty);
+    await _tap(tester, find.byIcon(Icons.calendar_month).last);
+    final dialog = tester.widget<DatePickerDialog>(
+      find.byType(DatePickerDialog),
+    );
+    expect(dialog.lastDate, today);
+    expect(dialog.initialDate, today);
+    tester
+        .widget<CalendarDatePicker>(find.byType(CalendarDatePicker))
+        .onDateChanged(yesterday);
+    await _tap(tester, find.text('OK'));
+    await _tap(tester, find.widgetWithText(FilledButton, 'Save'));
+    expect(
+      (await food.get()).docs.single.data()['date'],
+      yesterday.toIso8601String(),
+    );
+  });
+
+  testWidgets(
+    'A food delete confirmation cannot delete the next account’s entry',
+    (tester) async {
+      final firestore = await _open(tester);
+      final screen = tester.widget<NutritionScreen>(
+        find.byType(NutritionScreen),
+      );
+      final first = firestore.doc('users/$_uid/food_log/shared-id');
+      final other = firestore.doc('users/other/food_log/shared-id');
+      final date = DateTime.now().toIso8601String();
+      await first.set({'date': date, 'name': 'First lunch'});
+      await other.set({'date': date, 'name': 'Other lunch'});
+      await tester.pumpAndSettle();
+      await _tap(tester, find.text('First lunch'));
+      await _tap(tester, find.byTooltip('Delete food entry'));
+      screen.food!.bind('other');
+      await tester.pumpAndSettle();
+      await _tap(tester, find.widgetWithText(TextButton, 'Delete'));
+      expect(find.text(staleAccountMessage), findsOneWidget);
+      expect((await first.get()).data()!['name'], 'First lunch');
+      expect((await other.get()).data()!['name'], 'Other lunch');
+    },
+  );
+
   testWidgets('Settings opens the same saved Goals editor from every tab', (
     tester,
   ) async {
@@ -174,6 +303,12 @@ void main() {
       final dateField = tester.widget<DateField>(find.byType(DateField));
       final today = DateUtils.dateOnly(DateTime.now());
       expect(DateUtils.dateOnly(dateField.date), today);
+      await _tap(tester, find.byIcon(Icons.calendar_month).last);
+      expect(
+        tester.widget<DatePickerDialog>(find.byType(DatePickerDialog)).lastDate,
+        today,
+      );
+      await _tap(tester, find.text('Cancel').last);
       final yesterday = DateTime(today.year, today.month, today.day - 1);
       dateField.onChanged(yesterday);
       await tester.pump();

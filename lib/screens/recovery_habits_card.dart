@@ -47,10 +47,16 @@ class RecoveryHabitsCard extends StatelessWidget {
         final completed =
             automatic.values.where((done) => done).length + (windDown ? 1 : 0);
         final total = automatic.length + 1;
+        final account = habits.account;
         return AppCard(
           onTap: () => showFormSheet(
             context,
-            ListenableBuilder(listenable: changes, builder: _checklist),
+            ListenableBuilder(
+              listenable: changes,
+              builder: (context, _) => account == habits.account
+                  ? _checklist(context)
+                  : const Text(staleAccountMessage),
+            ),
           ),
           child: Row(
             children: [
@@ -112,7 +118,7 @@ class RecoveryHabitsCard extends StatelessWidget {
     );
   }
 
-  Widget _checklist(BuildContext context, Widget? child) {
+  Widget _checklist(BuildContext context) {
     final (automatic, windDown, loading, error) = _readHabits();
     final account = habits.account;
     return Column(

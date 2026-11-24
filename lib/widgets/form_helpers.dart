@@ -21,6 +21,16 @@ Future<void> showFormSheet(BuildContext context, Widget form) =>
       ),
     );
 
+const staleAccountMessage = 'Account changed. Reopen this form to continue.';
+
+bool isCurrentFormAccount(BuildContext context, Object opened, Object current) {
+  if (!context.mounted) return false;
+  if (identical(opened, current)) return true;
+  ScaffoldMessenger.of(context)
+      .showSnackBar(const SnackBar(content: Text(staleAccountMessage)));
+  return false;
+}
+
 Future<bool> confirmDelete(BuildContext context, String what) async {
   final ok = await showDialog<bool>(
     context: context,
@@ -40,6 +50,19 @@ Future<bool> confirmDelete(BuildContext context, String what) async {
     ),
   );
   return ok ?? false;
+}
+
+Future<bool> confirmAccountDelete(
+  BuildContext context,
+  String what,
+  Object Function() currentAccount, {
+  Object? openedAccount,
+}) async {
+  final account = openedAccount ?? currentAccount();
+  if (!isCurrentFormAccount(context, account, currentAccount())) return false;
+  return await confirmDelete(context, what) &&
+      context.mounted &&
+      isCurrentFormAccount(context, account, currentAccount());
 }
 
 String? requiredPositive(String? v) {
@@ -85,11 +108,13 @@ class DateField extends StatelessWidget {
   final DateTime date;
   final ValueChanged<DateTime> onChanged;
   final String label;
+  final DateTime? lastDate;
   const DateField({
     super.key,
     required this.date,
     required this.onChanged,
     this.label = 'Date',
+    this.lastDate,
   });
 
   @override
@@ -99,13 +124,14 @@ class DateField extends StatelessWidget {
     subtitle: Text(formatDate(date)),
     trailing: const Icon(Icons.calendar_month),
     onTap: () async {
+      final end = lastDate ?? DateTime.now().add(const Duration(days: 1));
       final d = await showDatePicker(
         context: context,
-        initialDate: date,
+        initialDate: lastDate != null && date.isAfter(end) ? end : date,
         firstDate: DateTime(2020),
-        lastDate: DateTime.now().add(const Duration(days: 1)),
+        lastDate: end,
       );
-      if (d != null) onChanged(d);
+      if (d != null && context.mounted) onChanged(d);
     },
   );
 }

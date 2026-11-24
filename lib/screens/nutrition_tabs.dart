@@ -88,7 +88,11 @@ class NutritionProgressTab extends StatelessWidget {
             ].join('  •  '),
             onTap: () => showEditFoodForm(context, f, store: _food),
             onDelete: () async {
-              if (await confirmDelete(context, 'food entry')) {
+              if (await confirmAccountDelete(
+                context,
+                'food entry',
+                () => _food.account,
+              )) {
                 _food.delete(f.id);
               }
             },
@@ -229,7 +233,11 @@ class NutritionProgressTab extends StatelessWidget {
                 _WeightForm(store: _weights, existing: e),
               ),
               onDelete: () async {
-                if (await confirmDelete(context, 'weigh-in')) {
+                if (await confirmAccountDelete(
+                  context,
+                  'weigh-in',
+                  () => _weights.account,
+                )) {
                   _weights.delete(e.id);
                 }
               },
@@ -306,6 +314,7 @@ class _WeightForm extends StatefulWidget {
 }
 
 class _WeightFormState extends State<_WeightForm> {
+  late final Object _account;
   final _key = GlobalKey<FormState>();
   late final TextEditingController weight;
   late DateTime date;
@@ -313,6 +322,7 @@ class _WeightFormState extends State<_WeightForm> {
   @override
   void initState() {
     super.initState();
+    _account = widget.store.account;
     final e = widget.existing;
     weight = TextEditingController(text: e == null ? '' : e.pounds.toString());
     date = e?.date ?? DateTime.now();
@@ -325,6 +335,7 @@ class _WeightFormState extends State<_WeightForm> {
   }
 
   void _save() {
+    if (!isCurrentFormAccount(context, _account, widget.store.account)) return;
     if (!_key.currentState!.validate()) return;
     widget.store.save(
       WeightEntry(
@@ -445,7 +456,15 @@ class _FoodFormState extends State<_FoodForm> {
   }
 
   Future<void> _save() async {
-    if (_saving || !_key.currentState!.validate()) return;
+    if (_saving ||
+        !isCurrentFormAccount(context, _account, widget.store.account)) {
+      return;
+    }
+    if (!_key.currentState!.validate()) return;
+    if (DateUtils.dateOnly(date).isAfter(DateUtils.dateOnly(DateTime.now()))) {
+      setState(() => _saveError = 'Choose today or an earlier date.');
+      return;
+    }
 
     final entry = FoodEntry(
       id: _entryId,
@@ -504,11 +523,17 @@ class _FoodFormState extends State<_FoodForm> {
                 color: Colors.red,
                 tooltip: 'Delete food entry',
                 onPressed: () async {
-                  final confirmed = await confirmDelete(context, 'food entry');
-
+                  final store = widget.store;
+                  final id = widget.existing!.id;
+                  final confirmed = await confirmAccountDelete(
+                    context,
+                    'food entry',
+                    () => store.account,
+                    openedAccount: _account,
+                  );
                   if (!confirmed || !context.mounted) return;
 
-                  widget.store.delete(widget.existing!.id);
+                  store.delete(id);
                   Navigator.of(context).pop();
                 },
               ),
@@ -567,7 +592,14 @@ class _FoodFormState extends State<_FoodForm> {
           validator: optionalNumber,
         ),
 
-        DateField(date: date, onChanged: (d) => setState(() => date = d)),
+        DateField(
+          date: date,
+          lastDate: DateUtils.dateOnly(DateTime.now()),
+          onChanged: (d) => setState(() {
+            date = d;
+            _saveError = null;
+          }),
+        ),
 
         if (_saveError case final error?)
           Text(
@@ -700,12 +732,14 @@ class _GoalsForm extends StatefulWidget {
 }
 
 class _GoalsFormState extends State<_GoalsForm> {
+  late final Object _account;
   final _key = GlobalKey<FormState>();
   late final TextEditingController calories, protein, carbs, fat, water, weight;
 
   @override
   void initState() {
     super.initState();
+    _account = widget.store.account;
     final g = widget.goals;
     calories = TextEditingController(text: '${g.calories}');
     protein = TextEditingController(text: '${g.protein}');
@@ -726,6 +760,7 @@ class _GoalsFormState extends State<_GoalsForm> {
   }
 
   void _save() {
+    if (!isCurrentFormAccount(context, _account, widget.store.account)) return;
     if (!_key.currentState!.validate()) return;
     widget.store.save(
       NutritionGoals(
@@ -800,6 +835,22 @@ class NutritionRecipesTab extends StatelessWidget {
       listenable: activeStore,
       builder: (context, _) {
         final recipes = activeStore.items;
+        final account = activeStore.account;
+
+        bool canUseRecipe() =>
+            isCurrentFormAccount(context, account, activeStore.account);
+
+        Future<void> deleteRecipe(Recipe recipe) async {
+          if (await confirmAccountDelete(
+            context,
+            'recipe',
+            () => activeStore.account,
+            openedAccount: account,
+          )) {
+            activeStore.delete(recipe.id);
+          }
+        }
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -827,26 +878,24 @@ class NutritionRecipesTab extends StatelessWidget {
                   context,
                   _RecipeDetail(
                     recipe: r,
-                    onAddToFoodLog: () => showFormSheet(
-                      context,
-                      _FoodForm(store: food ?? foodStore, recipe: r),
-                    ),
-                    onEdit: () => showFormSheet(
-                      context,
-                      _RecipeForm(existing: r, store: activeStore),
-                    ),
-                    onDelete: () async {
-                      if (await confirmDelete(context, 'recipe')) {
-                        activeStore.delete(r.id);
-                      }
+                    onAddToFoodLog: () {
+                      if (!canUseRecipe()) return;
+                      showFormSheet(
+                        context,
+                        _FoodForm(store: food ?? foodStore, recipe: r),
+                      );
                     },
+                    onEdit: () {
+                      if (!canUseRecipe()) return;
+                      showFormSheet(
+                        context,
+                        _RecipeForm(existing: r, store: activeStore),
+                      );
+                    },
+                    onDelete: () => deleteRecipe(r),
                   ),
                 ),
-                onDelete: () async {
-                  if (await confirmDelete(context, 'recipe')) {
-                    activeStore.delete(r.id);
-                  }
-                },
+                onDelete: () => deleteRecipe(r),
               ),
           ],
         );
@@ -961,12 +1010,14 @@ class _RecipeForm extends StatefulWidget {
 }
 
 class _RecipeFormState extends State<_RecipeForm> {
+  late final Object _account;
   final _key = GlobalKey<FormState>();
   late final TextEditingController name, calories, protein, ingredients, steps;
 
   @override
   void initState() {
     super.initState();
+    _account = widget.store.account;
     final r = widget.existing;
     name = TextEditingController(text: r?.name ?? '');
     calories = TextEditingController(text: r?.calories?.toString());
@@ -984,6 +1035,7 @@ class _RecipeFormState extends State<_RecipeForm> {
   }
 
   void _save() {
+    if (!isCurrentFormAccount(context, _account, widget.store.account)) return;
     if (!_key.currentState!.validate()) return;
 
     widget.store.save(

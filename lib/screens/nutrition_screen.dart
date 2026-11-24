@@ -361,11 +361,13 @@ class _NutritionScreenState extends State<NutritionScreen> {
                                     store: _food,
                                   ),
                                   onLongPress: () async {
-                                    if (await confirmDelete(
+                                    final store = _food;
+                                    if (await confirmAccountDelete(
                                       context,
                                       'food entry',
+                                      () => store.account,
                                     )) {
-                                      _food.delete(food.id);
+                                      store.delete(food.id);
                                     }
                                   },
                                 ),

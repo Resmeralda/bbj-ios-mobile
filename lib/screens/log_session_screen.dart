@@ -4,17 +4,21 @@ import 'package:go_router/go_router.dart';
 import '../models/training_session.dart';
 import '../session_store.dart';
 import '../theme.dart';
+import '../widgets/form_helpers.dart';
 
 /// Logs a new session, or edits one when [session] is provided.
 class LogSessionScreen extends StatefulWidget {
   final TrainingSession? session;
-  const LogSessionScreen({super.key, this.session});
+  final SessionStore? store;
+  const LogSessionScreen({super.key, this.session, this.store});
   @override
   State<LogSessionScreen> createState() => _LogSessionScreenState();
 }
 
 class _LogSessionScreenState extends State<LogSessionScreen> {
   final _form = GlobalKey<FormState>();
+  SessionStore get _store => widget.store ?? sessionStore;
+  late final Object _account;
   late String type;
   late DateTime date;
   late TimeOfDay time;
@@ -28,6 +32,7 @@ class _LogSessionScreenState extends State<LogSessionScreen> {
   @override
   void initState() {
     super.initState();
+    _account = _store.account;
     final s = widget.session;
     type = s?.type ?? sessionTypes.first;
     date = s?.date ?? DateTime.now();
@@ -63,6 +68,7 @@ class _LogSessionScreenState extends State<LogSessionScreen> {
   }
 
   void _save() {
+    if (!isCurrentFormAccount(context, _account, _store.account)) return;
     if (!_form.currentState!.validate()) return;
     final when = DateTime(
       date.year,
@@ -73,7 +79,7 @@ class _LogSessionScreenState extends State<LogSessionScreen> {
     );
     final base = widget.session;
     final s = TrainingSession(
-      id: base?.id ?? sessionStore.newId(),
+      id: base?.id ?? _store.newId(),
       type: type,
       date: when,
       hours: double.parse(duration.text),
@@ -81,8 +87,7 @@ class _LogSessionScreenState extends State<LogSessionScreen> {
       techniques: techniques.text.trim(),
       notes: notes.text.trim(),
     );
-    // TODO: also write to Cloud Firestore: users/{uid}/sessions
-    editing ? sessionStore.update(s) : sessionStore.add(s);
+    editing ? _store.update(s) : _store.add(s);
     context.pop();
   }
 
@@ -104,8 +109,10 @@ class _LogSessionScreenState extends State<LogSessionScreen> {
         ],
       ),
     );
-    if (ok == true && mounted) {
-      sessionStore.delete(widget.session!.id);
+    if (ok == true &&
+        mounted &&
+        isCurrentFormAccount(context, _account, _store.account)) {
+      _store.delete(widget.session!.id);
       context.pop();
     }
   }

@@ -189,6 +189,60 @@ Future<void> _tallViewport(WidgetTester tester) async {
 }
 
 void main() {
+  for (final (shortcut, save, path) in [
+    ('Log Sleep', 'Save', 'sleep'),
+    ('Log Wellness', 'Save', 'wellness'),
+    ('Add Note', 'Save Note', 'recovery_notes'),
+  ]) {
+    testWidgets('$shortcut rejects a draft from the previous account', (
+      tester,
+    ) async {
+      await _tallViewport(tester);
+      final firestore = await _openRecovery(tester);
+      final screen = tester.widget<RecoveryScreen>(find.byType(RecoveryScreen));
+      await _tap(tester, find.text(shortcut));
+      await tester.enterText(find.byType(TextFormField).first, '7');
+      if (path == 'recovery_notes') {
+        await tester.enterText(
+          find.byType(TextFormField).last,
+          'Private draft',
+        );
+      }
+      screen.sleep!.bind('other');
+      screen.wellness!.bind('other');
+      screen.notes!.bind('other');
+      await tester.pumpAndSettle();
+      await _tap(tester, find.widgetWithText(FilledButton, save));
+      expect(find.text(staleAccountMessage), findsOneWidget);
+      expect(
+        (await firestore.collection('users/other/$path').get()).docs,
+        isEmpty,
+      );
+      expect(
+        (await firestore.collection('users/$_uid/$path').get()).docs,
+        isEmpty,
+      );
+    });
+  }
+
+  testWidgets('Recovery checklist cannot toggle wind-down after rebinding', (
+    tester,
+  ) async {
+    await _tallViewport(tester);
+    final firestore = await _openRecovery(tester);
+    final screen = tester.widget<RecoveryScreen>(find.byType(RecoveryScreen));
+    await _tap(tester, find.text('Recovery Habits'));
+    expect(_habit('Wind-down'), findsOneWidget);
+    screen.habits!.bind('other');
+    await tester.pumpAndSettle();
+    expect(_habit('Wind-down'), findsNothing);
+    expect(find.text(staleAccountMessage), findsOneWidget);
+    expect(
+      (await firestore.collection('users/other/recovery_habits').get()).docs,
+      isEmpty,
+    );
+  });
+
   testWidgets('Weekly calendar stays within range for the first partial week', (
     tester,
   ) async {
@@ -686,6 +740,10 @@ void main() {
       );
       screen.habits!.bind('another-athlete');
       await tester.pumpAndSettle();
+      expect(_habit('Wind-down'), findsNothing);
+      Navigator.of(tester.element(find.byType(BottomSheet))).pop();
+      await tester.pumpAndSettle();
+      await _tap(tester, find.text('Recovery Habits'));
       expect(_checked(tester, 'Wind-down'), isFalse);
       expect(
         (await firestore
@@ -696,6 +754,10 @@ void main() {
       );
       screen.habits!.bind(_uid);
       await tester.pumpAndSettle();
+      expect(_habit('Wind-down'), findsNothing);
+      Navigator.of(tester.element(find.byType(BottomSheet))).pop();
+      await tester.pumpAndSettle();
+      await _tap(tester, find.text('Recovery Habits'));
       expect(_checked(tester, 'Wind-down'), isTrue);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       now = DateTime(2026, 11, 26, 9);

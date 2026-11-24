@@ -10,16 +10,21 @@ import 'models/training_session.dart';
 /// add / update / delete; changes appear immediately through the
 /// Firestore snapshot listener (it fires locally before the server confirms).
 class SessionStore extends ChangeNotifier {
+  SessionStore({this._firestore});
+
+  final FirebaseFirestore? _firestore;
   List<TrainingSession> _sessions = [];
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _sub;
   String? _uid;
+  Object _account = Object();
+  Object get account => _account;
 
   bool loading = false;
   String? error;
 
   CollectionReference<Map<String, dynamic>>? get _col => _uid == null
       ? null
-      : FirebaseFirestore.instance
+      : (_firestore ?? FirebaseFirestore.instance)
             .collection('users')
             .doc(_uid)
             .collection('sessions');
@@ -30,6 +35,7 @@ class SessionStore extends ChangeNotifier {
     _sub?.cancel();
     _sub = null;
     _uid = uid;
+    _account = Object();
     _sessions = [];
     error = null;
 
@@ -87,7 +93,9 @@ class SessionStore extends ChangeNotifier {
   void delete(String id) => _write(() => _col?.doc(id).delete());
 
   void _write(Future<void>? Function() op) {
+    final account = _account;
     op()?.catchError((Object e) {
+      if (account != _account) return;
       debugPrint('Session write failed: $e');
       error = 'Could not save your changes.';
       notifyListeners();

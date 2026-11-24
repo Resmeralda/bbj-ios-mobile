@@ -112,7 +112,11 @@ class RecoverySleepTab extends StatelessWidget {
               onTap: () =>
                   showFormSheet(context, _SleepForm(store: store, existing: e)),
               onDelete: () async {
-                if (await confirmDelete(context, 'sleep entry')) {
+                if (await confirmAccountDelete(
+                  context,
+                  'sleep entry',
+                  () => store.account,
+                )) {
                   store.delete(e.id);
                 }
               },
@@ -132,6 +136,7 @@ class _SleepForm extends StatefulWidget {
 }
 
 class _SleepFormState extends State<_SleepForm> {
+  late final Object _account;
   final _key = GlobalKey<FormState>();
   late final TextEditingController hours, notes;
   late DateTime date;
@@ -140,6 +145,7 @@ class _SleepFormState extends State<_SleepForm> {
   @override
   void initState() {
     super.initState();
+    _account = widget.store.account;
     final e = widget.existing;
     hours = TextEditingController(text: e == null ? '' : e.hours.toString());
     notes = TextEditingController(text: e?.notes ?? '');
@@ -160,6 +166,7 @@ class _SleepFormState extends State<_SleepForm> {
   }
 
   void _save() {
+    if (!isCurrentFormAccount(context, _account, widget.store.account)) return;
     if (!_key.currentState!.validate()) return;
     widget.store.save(
       SleepEntry(
@@ -287,7 +294,11 @@ class RecoveryWellnessTab extends StatelessWidget {
                 _WellnessForm(store: store, existing: e),
               ),
               onDelete: () async {
-                if (await confirmDelete(context, 'check-in')) {
+                if (await confirmAccountDelete(
+                  context,
+                  'check-in',
+                  () => store.account,
+                )) {
                   store.delete(e.id);
                 }
               },
@@ -307,6 +318,7 @@ class _WellnessForm extends StatefulWidget {
 }
 
 class _WellnessFormState extends State<_WellnessForm> {
+  late final Object _account;
   final _key = GlobalKey<FormState>();
   late final TextEditingController notes, hrv;
   late DateTime date;
@@ -315,6 +327,7 @@ class _WellnessFormState extends State<_WellnessForm> {
   @override
   void initState() {
     super.initState();
+    _account = widget.store.account;
     final e = widget.existing;
     notes = TextEditingController(text: e?.notes ?? '');
     hrv = TextEditingController(text: e?.hrv == null ? '' : '${e!.hrv}');
@@ -338,6 +351,7 @@ class _WellnessFormState extends State<_WellnessForm> {
   }
 
   void _save() {
+    if (!isCurrentFormAccount(context, _account, widget.store.account)) return;
     if (!_key.currentState!.validate()) return;
     final hrvText = hrv.text.trim();
     widget.store.save(
@@ -450,7 +464,11 @@ class RecoveryNotesTab extends StatelessWidget {
               onTap: () =>
                   showFormSheet(context, _NoteForm(store: store, existing: n)),
               onDelete: () async {
-                if (await confirmDelete(context, 'note')) {
+                if (await confirmAccountDelete(
+                  context,
+                  'note',
+                  () => store.account,
+                )) {
                   store.delete(n.id);
                 }
               },
@@ -470,6 +488,7 @@ class _NoteForm extends StatefulWidget {
 }
 
 class _NoteFormState extends State<_NoteForm> {
+  late final Object _account;
   final _key = GlobalKey<FormState>();
   late final TextEditingController title, body;
   late DateTime date;
@@ -477,6 +496,7 @@ class _NoteFormState extends State<_NoteForm> {
   @override
   void initState() {
     super.initState();
+    _account = widget.store.account;
     final n = widget.existing;
     title = TextEditingController(text: n?.title ?? '');
     body = TextEditingController(text: n?.body ?? '');
@@ -491,6 +511,7 @@ class _NoteFormState extends State<_NoteForm> {
   }
 
   void _save() {
+    if (!isCurrentFormAccount(context, _account, widget.store.account)) return;
     if (!_key.currentState!.validate()) return;
     widget.store.save(
       RecoveryNote(

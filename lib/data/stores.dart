@@ -83,6 +83,8 @@ class NutritionGoalsStore extends ChangeNotifier {
   NutritionGoals goals = const NutritionGoals();
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _sub;
   String? _uid;
+  Object _account = Object();
+  Object get account => _account;
 
   DocumentReference<Map<String, dynamic>>? get _doc => _uid == null
       ? null
@@ -97,6 +99,7 @@ class NutritionGoalsStore extends ChangeNotifier {
     _sub?.cancel();
     _sub = null;
     _uid = uid;
+    _account = Object();
     goals = const NutritionGoals();
     notifyListeners();
     if (uid == null) return;
