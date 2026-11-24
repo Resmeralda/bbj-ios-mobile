@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 
+import 'profile_store.dart';
 import 'shell.dart';
 import 'screens/home_screen.dart';
 import 'screens/profile_screen.dart';
@@ -37,7 +38,10 @@ class GoRouterRefreshStream extends ChangeNotifier {
 
 final appRouter = createAppRouter(FirebaseAuth.instance);
 
-GoRouter createAppRouter(FirebaseAuth auth) => GoRouter(
+GoRouter createAppRouter(
+  FirebaseAuth auth, {
+  ProfileStore? profiles,
+}) => GoRouter(
   initialLocation: '/home',
 
   refreshListenable: GoRouterRefreshStream(
@@ -78,7 +82,7 @@ GoRouter createAppRouter(FirebaseAuth auth) => GoRouter(
     ),
     GoRoute(
       path: '/register',
-      builder: (context, state) => const RegisterScreen(),
+      builder: (context, state) => RegisterScreen(auth: auth, store: profiles),
     ),
     GoRoute(
       path: '/forgot-password',
@@ -94,15 +98,15 @@ GoRouter createAppRouter(FirebaseAuth auth) => GoRouter(
           routes: [
             GoRoute(
               path: '/home',
-              builder: (_, _) => const HomeScreen(),
+              builder: (_, _) => HomeScreen(store: profiles),
               routes: [
                 GoRoute(
                   path: 'profile',
-                  builder: (_, _) => const ProfileScreen(),
+                  builder: (_, _) => ProfileScreen(store: profiles),
                   routes: [
                     GoRoute(
                       path: 'edit',
-                      builder: (_, _) => const EditProfileScreen(),
+                      builder: (_, _) => EditProfileScreen(store: profiles),
                     ),
                     GoRoute(
                       path: 'admin',

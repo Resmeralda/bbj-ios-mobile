@@ -1,4 +1,20 @@
 class UserProfile {
+  static const belts = ['White', 'Blue', 'Purple', 'Brown', 'Black'];
+  static const ageRanges = [
+    'Under 18',
+    '18-24',
+    '25-34',
+    '35-44',
+    '45-54',
+    '55+',
+  ];
+  static const minWeeklyGoal = 1;
+  static const maxWeeklyGoal = 7;
+  static const defaultWeeklyGoal = 4;
+
+  static bool validWeeklyGoal(int goal) =>
+      goal >= minWeeklyGoal && goal <= maxWeeklyGoal;
+
   final String name;
   final String belt;
   final String ageRange;
@@ -31,7 +47,7 @@ class UserProfile {
     nutritionGoal: nutritionGoal ?? this.nutritionGoal,
   );
 
-  // Ready for Cloud Firestore: users/{uid}
+  // Stored at users/{uid}/settings/profile.
   Map<String, dynamic> toMap() => {
     'name': name,
     'belt': belt,
@@ -41,12 +57,27 @@ class UserProfile {
     'nutritionGoal': nutritionGoal,
   };
 
-  factory UserProfile.fromMap(Map<String, dynamic> m) => UserProfile(
-    name: m['name'] ?? '',
-    belt: m['belt'] ?? 'White',
-    ageRange: m['ageRange'] ?? '25-34',
-    weeklyGoal: m['weeklyGoal'] ?? 4,
-    fitnessGoal: m['fitnessGoal'] ?? '',
-    nutritionGoal: m['nutritionGoal'] ?? '',
-  );
+  factory UserProfile.fromMap(
+    Map<String, dynamic> data, {
+    String fallbackName = 'Athlete',
+  }) {
+    final name = data['name'];
+    final belt = data['belt'];
+    final age = data['ageRange'];
+    final goal = data['weeklyGoal'];
+    final fitness = data['fitnessGoal'];
+    final nutrition = data['nutritionGoal'];
+    return UserProfile(
+      name: name is String && name.trim().isNotEmpty
+          ? name.trim()
+          : fallbackName,
+      belt: belt is String && belts.contains(belt) ? belt : 'White',
+      ageRange: age is String && ageRanges.contains(age) ? age : '25-34',
+      weeklyGoal: goal is int && validWeeklyGoal(goal)
+          ? goal
+          : defaultWeeklyGoal,
+      fitnessGoal: fitness is String ? fitness : '',
+      nutritionGoal: nutrition is String ? nutrition : '',
+    );
+  }
 }

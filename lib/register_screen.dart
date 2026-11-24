@@ -46,7 +46,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
           );
 
       await credential.user?.updateDisplayName(name);
-      profileStore.update(profileStore.profile.copyWith(name: name));
+      final uid = credential.user?.uid;
+      if (uid != null && FirebaseAuth.instance.currentUser?.uid == uid) {
+        profileStore.refreshAuthName(uid, name);
+      }
 
       if (!mounted) return;
 

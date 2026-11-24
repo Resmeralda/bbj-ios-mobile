@@ -15,8 +15,7 @@ Future<void> main() async {
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // Reset in-memory stores whenever the signed-in user changes, and seed
-  // the profile name from the Firebase display name.
+  // Bind each store to the signed-in user.
   String? lastUid;
   void syncStores(User? user) {
     if (user?.uid == lastUid) return;
@@ -24,7 +23,7 @@ Future<void> main() async {
     lastUid = user?.uid;
     sessionStore.bind(user?.uid);
     bindUserData(user?.uid);
-    profileStore.reset(name: user?.displayName);
+    profileStore.bind(user?.uid, authName: user?.displayName);
   }
 
   syncStores(FirebaseAuth.instance.currentUser);
