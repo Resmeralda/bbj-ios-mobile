@@ -85,7 +85,8 @@ class HomeScreen extends StatelessWidget {
                     const SizedBox(width: 8),
                     IconButton(
                       icon: const Icon(Icons.settings, color: AppColors.muted),
-                      onPressed: () => context.push('/home/profile'),
+                      tooltip: 'Profile settings',
+                      onPressed: () => context.push('/home/profile/edit'),
                     ),
                   ],
                 ),
@@ -192,7 +193,7 @@ class HomeScreen extends StatelessWidget {
                   label: const Text('Log Training Session'),
                 ),
                 const SizedBox(height: 16),
-                const SectionHeader('Quick Access', action: 'Edit'),
+                const SectionHeader('Quick Access'),
                 Row(
                   children: [
                     QuickTile(
@@ -225,7 +226,7 @@ class HomeScreen extends StatelessWidget {
                 SectionHeader(
                   'This Week',
                   action: 'View All',
-                  onAction: () => context.go('/training'),
+                  onAction: () => context.push('/training/history'),
                 ),
                 if (!unavailable && week.isEmpty)
                   const AppCard(child: Text('No training sessions this week.')),

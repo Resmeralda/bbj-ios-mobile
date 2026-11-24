@@ -1,6 +1,8 @@
 import 'package:bjj_app/main.dart';
 import 'package:bjj_app/profile_store.dart';
 import 'package:bjj_app/router.dart';
+import 'package:bjj_app/screens/edit_profile_screen.dart';
+import 'package:bjj_app/screens/history_screen.dart';
 import 'package:bjj_app/screens/login_screen.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
@@ -34,6 +36,22 @@ void main() {
 
     // Home screen is shown first.
     expect(find.text('Hi, Esme!'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Profile settings'));
+    await tester.pumpAndSettle();
+    expect(find.byType(EditProfileScreen), findsOneWidget);
+    expect(find.text('Change photo'), findsNothing);
+    router.pop();
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.text('View All'), 150);
+    expect(find.text('Quick Access'), findsOneWidget);
+    expect(find.text('Edit'), findsNothing);
+    await tester.tap(find.text('View All'));
+    await tester.pumpAndSettle();
+    expect(find.byType(HistoryScreen), findsOneWidget);
+    router.pop();
+    await tester.pumpAndSettle();
 
     // Tap the Training tab in the bottom bar.
     await tester.tap(

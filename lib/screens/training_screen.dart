@@ -149,7 +149,11 @@ class _TrainingScreenState extends State<TrainingScreen> {
                   action: 'View All',
                   onAction: () => setState(() => tab = 1),
                 ),
-                if (all.isEmpty)
+                if (sessionStore.error case final error?)
+                  Text(error)
+                else if (sessionStore.loading)
+                  const LinearProgressIndicator()
+                else if (all.isEmpty)
                   const Padding(
                     padding: EdgeInsets.all(16),
                     child: Text(
@@ -171,25 +175,25 @@ class _TrainingScreenState extends State<TrainingScreen> {
                         Icons.sports_martial_arts,
                         'Gi Class',
                         AppColors.home,
-                        onTap: () => context.push('/training/log'),
+                        onTap: () => _quickAdd('Gi Class'),
                       ),
                       QuickTile(
                         Icons.checkroom,
                         'No-Gi Class',
                         Colors.deepPurple,
-                        onTap: () => context.push('/training/log'),
+                        onTap: () => _quickAdd('No-Gi Class'),
                       ),
                       QuickTile(
                         Icons.people_alt,
                         'Open Mat',
                         Colors.deepOrange,
-                        onTap: () => context.push('/training/log'),
+                        onTap: () => _quickAdd('Open Mat'),
                       ),
                       QuickTile(
                         Icons.fitness_center,
                         'Drilling / Technique',
                         Colors.amber.shade800,
-                        onTap: () => context.push('/training/log'),
+                        onTap: () => _quickAdd('Drilling / Technique'),
                       ),
                     ],
                   ),
@@ -197,5 +201,9 @@ class _TrainingScreenState extends State<TrainingScreen> {
               ],
       );
     },
+  );
+
+  void _quickAdd(String type) => context.push(
+    Uri(path: '/training/log', queryParameters: {'type': type}).toString(),
   );
 }

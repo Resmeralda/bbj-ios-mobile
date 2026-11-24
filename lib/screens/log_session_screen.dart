@@ -10,7 +10,13 @@ import '../widgets/form_helpers.dart';
 class LogSessionScreen extends StatefulWidget {
   final TrainingSession? session;
   final SessionStore? store;
-  const LogSessionScreen({super.key, this.session, this.store});
+  final String? initialType;
+  const LogSessionScreen({
+    super.key,
+    this.session,
+    this.store,
+    this.initialType,
+  });
   @override
   State<LogSessionScreen> createState() => _LogSessionScreenState();
 }
@@ -34,7 +40,10 @@ class _LogSessionScreenState extends State<LogSessionScreen> {
     super.initState();
     _account = _store.account;
     final s = widget.session;
-    type = s?.type ?? sessionTypes.first;
+    final requestedType = s?.type ?? widget.initialType;
+    type = sessionTypes.contains(requestedType)
+        ? requestedType!
+        : sessionTypes.first;
     date = s?.date ?? DateTime.now();
     time = TimeOfDay.fromDateTime(s?.date ?? DateTime.now());
     duration = TextEditingController(text: (s?.hours ?? 1.5).toString());
@@ -59,12 +68,12 @@ class _LogSessionScreenState extends State<LogSessionScreen> {
       firstDate: DateTime(2020),
       lastDate: DateTime.now().add(const Duration(days: 1)),
     );
-    if (d != null) setState(() => date = d);
+    if (d != null && mounted) setState(() => date = d);
   }
 
   Future<void> _pickTime() async {
     final t = await showTimePicker(context: context, initialTime: time);
-    if (t != null) setState(() => time = t);
+    if (t != null && mounted) setState(() => time = t);
   }
 
   void _save() {
@@ -164,13 +173,23 @@ class _LogSessionScreenState extends State<LogSessionScreen> {
             decoration: const InputDecoration(labelText: 'Duration (hours)'),
             validator: (v) {
               final n = double.tryParse(v ?? '');
-              return (n == null || n <= 0) ? 'Enter a number above 0' : null;
+              return (n == null || !n.isFinite || n <= 0)
+                  ? 'Enter a finite number above 0'
+                  : null;
             },
           ),
           TextFormField(
             controller: rounds,
             keyboardType: TextInputType.number,
             decoration: const InputDecoration(labelText: 'Sparring rounds'),
+            validator: (value) {
+              final text = value?.trim() ?? '';
+              if (text.isEmpty) return null;
+              final n = int.tryParse(text);
+              return n == null || n < 0
+                  ? 'Enter a whole number of 0 or more'
+                  : null;
+            },
           ),
           TextFormField(
             controller: techniques,

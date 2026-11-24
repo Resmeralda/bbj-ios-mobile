@@ -251,7 +251,7 @@ void main() {
   );
 
   testWidgets(
-    'Open technique details update on edit and show a back action after removal',
+    'Open technique details update and can go back after removal or a load error',
     (tester) async {
       final db = FakeFirebaseFirestore();
       final auth = MockFirebaseAuth(
@@ -293,6 +293,12 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Technique not found.'), findsOneWidget);
       expect(find.byTooltip('Back'), findsOneWidget);
+      await ref.set({..._publication, 'name': 42});
+      await tester.pumpAndSettle();
+      expect(find.text('Could not load technique.'), findsOneWidget);
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+      expect(find.text('Open technique'), findsOneWidget);
       expect((await practiced.get()).exists, isTrue);
       expect((await favorite.get()).exists, isTrue);
     },
