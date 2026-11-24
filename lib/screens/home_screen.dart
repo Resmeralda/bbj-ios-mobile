@@ -6,15 +6,18 @@ import '../theme.dart';
 import '../widgets/common.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.store});
+
+  final ProfileStore? store;
 
   @override
   Widget build(BuildContext context) {
+    final profiles = store ?? profileStore;
     // Sample data; replace with Firestore streams.
     return ListenableBuilder(
-      listenable: profileStore,
+      listenable: profiles,
       builder: (context, _) {
-        final p = profileStore.profile;
+        final p = profiles.profile;
         const done = 3;
         final goal = p.weeklyGoal;
         return Scaffold(

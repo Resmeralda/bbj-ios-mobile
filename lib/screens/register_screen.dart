@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 
+import '../profile_store.dart';
 import '../theme.dart';
 
 class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({super.key});
+  const RegisterScreen({super.key, this.auth, this.store});
+
+  final FirebaseAuth? auth;
+  final ProfileStore? store;
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -32,48 +36,49 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _createAccount() async {
-  if (!_formKey.currentState!.validate()) {
-    return;
-  }
-
-  try {
-    final credential =
-        await FirebaseAuth.instance.createUserWithEmailAndPassword(
-      email: _emailController.text.trim(),
-      password: _passwordController.text,
-    );
-
-    await credential.user?.updateDisplayName(
-      _nameController.text.trim(),
-    );
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Account created successfully!'),
-      ),
-    );
-  } on FirebaseAuthException catch (e) {
-    if (!mounted) return;
-
-    String message = 'Unable to create account.';
-
-    if (e.code == 'email-already-in-use') {
-      message = 'An account already exists with this email.';
-    } else if (e.code == 'invalid-email') {
-      message = 'Please enter a valid email address.';
-    } else if (e.code == 'weak-password') {
-      message = 'Please choose a stronger password.';
+    if (!_formKey.currentState!.validate()) {
+      return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-      ),
-    );
+    try {
+      final auth = widget.auth ?? FirebaseAuth.instance;
+      final profiles = widget.store ?? profileStore;
+      final name = _nameController.text.trim();
+      final credential = await auth.createUserWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+
+      final user = credential.user;
+      if (user != null) {
+        await user.updateDisplayName(name);
+        if (auth.currentUser?.uid == user.uid) {
+          profiles.refreshAuthName(user.uid, name);
+        }
+      }
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Account created successfully!')),
+      );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+
+      String message = 'Unable to create account.';
+
+      if (e.code == 'email-already-in-use') {
+        message = 'An account already exists with this email.';
+      } else if (e.code == 'invalid-email') {
+        message = 'Please enter a valid email address.';
+      } else if (e.code == 'weak-password') {
+        message = 'Please choose a stronger password.';
+      }
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -113,10 +118,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     const Text(
                       'Start tracking your BJJ progress',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: AppColors.muted,
-                      ),
+                      style: TextStyle(fontSize: 16, color: AppColors.muted),
                     ),
 
                     const SizedBox(height: 32),
@@ -211,8 +213,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ),
                           onPressed: () {
                             setState(() {
-                              _hideConfirmPassword =
-                                  !_hideConfirmPassword;
+                              _hideConfirmPassword = !_hideConfirmPassword;
                             });
                           },
                         ),
@@ -243,11 +244,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                     const SizedBox(height: 16),
 
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         const Text(
                           'Already have an account? ',
+                          textAlign: TextAlign.center,
                           style: TextStyle(color: AppColors.muted),
                         ),
                         TextButton(

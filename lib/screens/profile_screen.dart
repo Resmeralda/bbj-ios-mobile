@@ -15,7 +15,11 @@ Color beltColor(String belt) => switch (belt) {
 };
 
 class ProfileScreen extends StatelessWidget {
-  const ProfileScreen({super.key});
+  const ProfileScreen({super.key, this.store});
+
+  final ProfileStore? store;
+
+  ProfileStore get _profiles => store ?? profileStore;
 
   Future<void> _logout(BuildContext context) async {
     await FirebaseAuth.instance.signOut();
@@ -27,9 +31,9 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: profileStore,
+    listenable: _profiles,
     builder: (context, _) {
-      final p = profileStore.profile;
+      final p = _profiles.profile;
       return Scaffold(
         appBar: AppBar(
           title: const Text('Profile'),
@@ -45,6 +49,8 @@ class ProfileScreen extends StatelessWidget {
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            if (_profiles.loading) const LinearProgressIndicator(),
+            if (_profiles.loadError case final error?) Text(error),
             Center(
               child: CircleAvatar(
                 radius: 48,
