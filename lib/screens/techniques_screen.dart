@@ -398,7 +398,7 @@ class _TechniquesContentState extends State<TechniquesContent> {
                           padding: const EdgeInsets.only(right: 10),
                           child: SizedBox(
                             width: 190,
-                            child: _VideoCard(
+                            child: TechniqueVideoCard(
                               technique: technique,
                               isFavorite: favoriteIds.contains(technique.id),
                               onTap: () => _openTechnique(technique),
@@ -428,7 +428,7 @@ class _TechniquesContentState extends State<TechniquesContent> {
                             for (final technique in visible)
                               SizedBox(
                                 width: cardWidth,
-                                child: _VideoCard(
+                                child: TechniqueVideoCard(
                                   technique: technique,
                                   isFavorite: favoriteIds.contains(technique.id),
                                   onTap: () => _openTechnique(technique),
@@ -512,13 +512,14 @@ String? _thumbnailUrl(String? videoUrl) {
   return 'https://img.youtube.com/vi/$videoId/hqdefault.jpg';
 }
 
-class _VideoCard extends StatelessWidget {
+class TechniqueVideoCard extends StatelessWidget {
   final Technique technique;
   final bool isFavorite;
   final VoidCallback onTap;
   final VoidCallback onFavoriteTap;
 
-  const _VideoCard({
+  const TechniqueVideoCard({
+    super.key,
     required this.technique,
     required this.isFavorite,
     required this.onTap,
@@ -551,7 +552,7 @@ class _VideoCard extends StatelessWidget {
                           : Image.network(
                               thumbnail,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
+                              errorBuilder: (_, _, _) =>
                                   Container(color: Colors.black87),
                             ),
                     ),

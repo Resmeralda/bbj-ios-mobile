@@ -35,15 +35,17 @@ class GoRouterRefreshStream extends ChangeNotifier {
   }
 }
 
-final appRouter = GoRouter(
+final appRouter = createAppRouter(FirebaseAuth.instance);
+
+GoRouter createAppRouter(FirebaseAuth auth) => GoRouter(
   initialLocation: '/home',
 
   refreshListenable: GoRouterRefreshStream(
-    FirebaseAuth.instance.authStateChanges(),
+    auth.authStateChanges(),
   ),
 
   redirect: (context, state) {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = auth.currentUser;
     final isLoggedIn = user != null;
 
     final isLoginPage = state.matchedLocation == '/login';
