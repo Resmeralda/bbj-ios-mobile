@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/stores.dart';
 import '../models/health_models.dart';
+import '../models/nutrition_progress.dart';
 import '../models/training_session.dart' show formatDate;
 import '../theme.dart';
 import '../widgets/common.dart';
@@ -11,25 +12,36 @@ import '../data/collection_store.dart';
 // ───────────────────── Progress (food log + weight log) ─────────────────────
 
 class NutritionProgressTab extends StatelessWidget {
-  const NutritionProgressTab({super.key});
+  const NutritionProgressTab({
+    super.key,
+    this.weights,
+    this.food,
+    this.targets,
+  });
+
+  final CollectionStore<WeightEntry>? weights;
+  final CollectionStore<FoodEntry>? food;
+  final NutritionGoalsStore? targets;
+
+  CollectionStore<WeightEntry> get _weights => weights ?? weightStore;
+  CollectionStore<FoodEntry> get _food => food ?? foodStore;
+  NutritionGoalsStore get _targets => targets ?? goalsStore;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: Listenable.merge([weightStore, goalsStore, foodStore]),
+    listenable: Listenable.merge([_weights, _targets, _food]),
     builder: (context, _) {
       // ── weight data
-      final entries = weightStore.items; // newest first
-      final goals = goalsStore.goals;
+      final entries = _weights.items
+          .where((entry) => WeightEntry.validPounds(entry.pounds))
+          .toList(); // newest first
+      final goals = _targets.goals;
       final goal = goals.goalWeight;
       final current = entries.isEmpty ? null : entries.first.pounds;
       final start = entries.isEmpty ? null : entries.last.pounds;
 
-      var progress = 0.0;
-      if (current != null && start != null && goal > 0 && goal != start) {
-        progress = ((current - start) / (goal - start))
-            .clamp(0.0, 1.0)
-            .toDouble();
-      }
+      final progress = weightGoalProgress(start, current, goal);
+      final hasWeightGoal = WeightEntry.validPounds(goal);
 
       final change = (current != null && start != null)
           ? current - start
@@ -37,25 +49,24 @@ class NutritionProgressTab extends StatelessWidget {
       final recent = entries.take(8).toList().reversed.toList();
 
       // ── food data
-      final foods = foodStore.items; // newest first
+      final foods = _food.items; // newest first
       final now = DateTime.now();
-      bool isToday(DateTime d) =>
-          d.year == now.year && d.month == now.month && d.day == now.day;
+      bool isToday(DateTime date) => DateUtils.isSameDay(date.toLocal(), now);
       final todays = foods.where((f) => isToday(f.date)).toList();
       final todayCal = todays.fold<int>(0, (a, f) => a + f.calories);
       final todayProtein = todays.fold<int>(0, (a, f) => a + f.protein);
-      final calProgress = goals.calories == 0 ? 0.0 : todayCal / goals.calories;
+      final calProgress = calorieGoalProgress(todayCal, goals.calories);
 
       final foodTiles = <Widget>[];
       DateTime? lastDay;
       for (final f in foods) {
-        final day = DateTime(f.date.year, f.date.month, f.date.day);
+        final day = DateUtils.dateOnly(f.date.toLocal());
         if (day != lastDay) {
           foodTiles.add(
             Padding(
               padding: const EdgeInsets.only(top: 4, bottom: 8),
               child: Text(
-                isToday(f.date) ? 'Today' : formatDate(f.date),
+                isToday(f.date) ? 'Today' : formatDate(day),
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   color: AppColors.muted,
@@ -75,10 +86,10 @@ class NutritionProgressTab extends StatelessWidget {
               if (f.calories > 0) '${f.calories} cal',
               if (f.protein > 0) '${f.protein} g protein',
             ].join('  •  '),
-            onTap: () => showFormSheet(context, _FoodForm(existing: f)),
+            onTap: () => showEditFoodForm(context, f, store: _food),
             onDelete: () async {
               if (await confirmDelete(context, 'food entry')) {
-                foodStore.delete(f.id);
+                _food.delete(f.id);
               }
             },
           ),
@@ -95,7 +106,7 @@ class NutritionProgressTab extends StatelessWidget {
                   label: 'Log Food',
                   icon: Icons.restaurant,
                   color: AppColors.nutrition,
-                  onPressed: () => showFormSheet(context, const _FoodForm()),
+                  onPressed: () => showAddFoodForm(context, store: _food),
                 ),
               ),
               const SizedBox(width: 8),
@@ -104,7 +115,8 @@ class NutritionProgressTab extends StatelessWidget {
                   label: 'Log Weight',
                   icon: Icons.monitor_weight_outlined,
                   color: AppColors.nutrition,
-                  onPressed: () => showFormSheet(context, const _WeightForm()),
+                  onPressed: () =>
+                      showFormSheet(context, _WeightForm(store: _weights)),
                 ),
               ),
             ],
@@ -119,7 +131,9 @@ class NutritionProgressTab extends StatelessWidget {
               children: [
                 const Text('Today', style: TextStyle(fontSize: 12)),
                 Text(
-                  '$todayCal / ${goals.calories} cal',
+                  goals.calories > 0
+                      ? '$todayCal / ${goals.calories} cal'
+                      : '$todayCal cal',
                   style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
@@ -128,6 +142,11 @@ class NutritionProgressTab extends StatelessWidget {
                 const SizedBox(height: 8),
                 ProgressBar(calProgress, AppColors.nutrition),
                 const SizedBox(height: 4),
+                if (goals.calories <= 0)
+                  const Text(
+                    'No calorie target set',
+                    style: TextStyle(fontSize: 12, color: AppColors.muted),
+                  ),
                 Text(
                   '$todayProtein g of ${goals.protein} g protein',
                   style: const TextStyle(fontSize: 12, color: AppColors.muted),
@@ -135,10 +154,10 @@ class NutritionProgressTab extends StatelessWidget {
               ],
             ),
           ),
-          if (foodStore.error != null) EmptyState(foodStore.error!),
-          if (foods.isEmpty && foodStore.error == null)
+          if (_food.error != null) EmptyState(_food.error!),
+          if (foods.isEmpty && _food.error == null)
             EmptyState(
-              foodStore.loading
+              _food.loading
                   ? 'Loading…'
                   : 'Nothing logged yet. Tap Log Food to add what you ate.',
             ),
@@ -151,7 +170,10 @@ class NutritionProgressTab extends StatelessWidget {
               'Current',
               current == null ? '—' : '${oneDecimal(current)} lbs',
             ),
-            StatCard('Goal', goal > 0 ? '${oneDecimal(goal)} lbs' : 'Not set'),
+            StatCard(
+              'Goal',
+              hasWeightGoal ? '${oneDecimal(goal)} lbs' : 'Not set',
+            ),
             StatCard(
               'Change',
               change == null
@@ -160,7 +182,7 @@ class NutritionProgressTab extends StatelessWidget {
               color: const Color(0xFFE6F3E8),
             ),
           ]),
-          if (goal > 0 && entries.isNotEmpty)
+          if (progress != null)
             AppCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -173,8 +195,13 @@ class NutritionProgressTab extends StatelessWidget {
                   ProgressBar(progress, AppColors.nutrition),
                   const SizedBox(height: 4),
                   Text(
-                    '${(progress * 100).round()}% of the way from '
-                    '${oneDecimal(start!)} to ${oneDecimal(goal)} lbs',
+                    progress == 1
+                        ? '100% • Goal reached'
+                        : start == goal
+                        ? '${oneDecimal((current! - goal).abs())} lbs '
+                              '${current > goal ? 'above' : 'below'} goal'
+                        : '${(progress * 100).round()}% of the way from '
+                              '${oneDecimal(start!)} to ${oneDecimal(goal)} lbs',
                     style: const TextStyle(
                       fontSize: 12,
                       color: AppColors.muted,
@@ -184,10 +211,10 @@ class NutritionProgressTab extends StatelessWidget {
               ),
             ),
           if (recent.length >= 2) _WeightChart(recent),
-          if (weightStore.error != null) EmptyState(weightStore.error!),
-          if (entries.isEmpty && weightStore.error == null)
+          if (_weights.error != null) EmptyState(_weights.error!),
+          if (entries.isEmpty && _weights.error == null)
             EmptyState(
-              weightStore.loading
+              _weights.loading
                   ? 'Loading…'
                   : 'No weigh-ins yet. Tap Log Weight to add one.',
             ),
@@ -197,10 +224,13 @@ class NutritionProgressTab extends StatelessWidget {
               color: AppColors.nutrition,
               title: '${oneDecimal(e.pounds)} lbs',
               subtitle: formatDate(e.date),
-              onTap: () => showFormSheet(context, _WeightForm(existing: e)),
+              onTap: () => showFormSheet(
+                context,
+                _WeightForm(store: _weights, existing: e),
+              ),
               onDelete: () async {
                 if (await confirmDelete(context, 'weigh-in')) {
-                  weightStore.delete(e.id);
+                  _weights.delete(e.id);
                 }
               },
             ),
@@ -241,6 +271,8 @@ class _WeightChart extends StatelessWidget {
                   children: [
                     Text(
                       oneDecimal(e.pounds),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 9,
                         color: AppColors.muted,
@@ -249,7 +281,7 @@ class _WeightChart extends StatelessWidget {
                     const SizedBox(height: 2),
                     Container(
                       margin: const EdgeInsets.symmetric(horizontal: 2),
-                      height: 20 + 60 * (e.pounds - lo) / span,
+                      height: 20 + 60 * ((e.pounds - lo) / span),
                       decoration: BoxDecoration(
                         color: AppColors.nutrition.withValues(alpha: 0.7),
                         borderRadius: BorderRadius.circular(3),
@@ -266,8 +298,9 @@ class _WeightChart extends StatelessWidget {
 }
 
 class _WeightForm extends StatefulWidget {
+  final CollectionStore<WeightEntry> store;
   final WeightEntry? existing;
-  const _WeightForm({this.existing});
+  const _WeightForm({required this.store, this.existing});
   @override
   State<_WeightForm> createState() => _WeightFormState();
 }
@@ -293,9 +326,9 @@ class _WeightFormState extends State<_WeightForm> {
 
   void _save() {
     if (!_key.currentState!.validate()) return;
-    weightStore.save(
+    widget.store.save(
       WeightEntry(
-        id: widget.existing?.id ?? weightStore.newId(),
+        id: widget.existing?.id ?? widget.store.newId(),
         date: date,
         pounds: double.parse(weight.text),
       ),
@@ -333,11 +366,19 @@ class _WeightFormState extends State<_WeightForm> {
 }
 
 class _FoodForm extends StatefulWidget {
+  final CollectionStore<FoodEntry> store;
   final FoodEntry? existing;
   final String? initialMeal;
   final DateTime? initialDate;
+  final Recipe? recipe;
 
-  const _FoodForm({this.existing, this.initialMeal, this.initialDate});
+  const _FoodForm({
+    required this.store,
+    this.existing,
+    this.initialMeal,
+    this.initialDate,
+    this.recipe,
+  });
 
   @override
   State<_FoodForm> createState() => _FoodFormState();
@@ -349,30 +390,30 @@ class _FoodFormState extends State<_FoodForm> {
   late final TextEditingController name, calories, protein, carbs, fat;
   late DateTime date;
   late String meal;
+  late final Object _account;
+  late final _entryId = widget.existing?.id ?? widget.store.newId();
+  bool _saving = false;
+  String? _saveError;
 
   @override
   void initState() {
     super.initState();
 
     final f = widget.existing;
+    final recipe = widget.recipe;
+    _account = widget.store.account;
 
-    name = TextEditingController(text: f?.name ?? '');
-
-    calories = TextEditingController(
-      text: (f == null || f.calories == 0) ? '' : '${f.calories}',
-    );
-
-    protein = TextEditingController(
-      text: (f == null || f.protein == 0) ? '' : '${f.protein}',
-    );
-
-    carbs = TextEditingController(
-      text: (f == null || f.carbs == 0) ? '' : '${f.carbs}',
-    );
-
-    fat = TextEditingController(
-      text: (f == null || f.fat == 0) ? '' : '${f.fat}',
-    );
+    TextEditingController amount(int? prefilled, int? existing) =>
+        TextEditingController(
+          text:
+              prefilled?.toString() ??
+              (existing == null || existing == 0 ? '' : existing.toString()),
+        );
+    name = TextEditingController(text: f?.name ?? recipe?.name ?? '');
+    calories = amount(recipe?.calories, f?.calories);
+    protein = amount(recipe?.protein, f?.protein);
+    carbs = amount(recipe?.carbs, f?.carbs);
+    fat = amount(recipe?.fat, f?.fat);
 
     // Use the existing entry's date when editing.
     // Otherwise, use the date selected in Food History.
@@ -403,27 +444,48 @@ class _FoodFormState extends State<_FoodForm> {
     super.dispose();
   }
 
-  void _save() {
-    if (!_key.currentState!.validate()) return;
+  Future<void> _save() async {
+    if (_saving || !_key.currentState!.validate()) return;
 
-    foodStore.save(
-      FoodEntry(
-        id: widget.existing?.id ?? foodStore.newId(),
-        date: date,
-        meal: meal,
-        name: name.text.trim(),
-        calories: (double.tryParse(calories.text) ?? 0).round(),
-        protein: (double.tryParse(protein.text) ?? 0).round(),
-        carbs: (double.tryParse(carbs.text) ?? 0).round(),
-        fat: (double.tryParse(fat.text) ?? 0).round(),
-      ),
+    final entry = FoodEntry(
+      id: _entryId,
+      date: date,
+      meal: meal,
+      name: name.text.trim(),
+      calories: _enteredAmount(calories),
+      protein: _enteredAmount(protein),
+      carbs: _enteredAmount(carbs),
+      fat: _enteredAmount(fat),
     );
 
+    if (widget.recipe == null) {
+      widget.store.save(entry);
+    } else {
+      FocusScope.of(context).unfocus();
+      setState(() {
+        _saving = true;
+        _saveError = null;
+      });
+      try {
+        await widget.store.saveConfirmed(entry, account: _account);
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _saving = false;
+          _saveError = 'Could not save this food entry. Please try again.';
+        });
+        return;
+      }
+      if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
+    }
     Navigator.of(context).pop();
   }
 
   @override
-  Widget build(BuildContext context) => Form(
+  Widget build(BuildContext context) =>
+      AbsorbPointer(absorbing: _saving, child: _buildForm(context));
+
+  Widget _buildForm(BuildContext context) => Form(
     key: _key,
     child: Column(
       mainAxisSize: MainAxisSize.min,
@@ -446,7 +508,7 @@ class _FoodFormState extends State<_FoodForm> {
 
                   if (!confirmed || !context.mounted) return;
 
-                  foodStore.delete(widget.existing!.id);
+                  widget.store.delete(widget.existing!.id);
                   Navigator.of(context).pop();
                 },
               ),
@@ -507,6 +569,11 @@ class _FoodFormState extends State<_FoodForm> {
 
         DateField(date: date, onChanged: (d) => setState(() => date = d)),
 
+        if (_saveError case final error?)
+          Text(
+            error,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
         const SizedBox(height: 12),
 
         FilledButton(
@@ -514,15 +581,34 @@ class _FoodFormState extends State<_FoodForm> {
             backgroundColor: AppColors.nutrition,
             padding: const EdgeInsets.all(16),
           ),
-          onPressed: _save,
-          child: const Text('Save'),
+          onPressed: _saving ? null : _save,
+          child: Text(_saving ? 'Saving…' : 'Save'),
         ),
+        if (widget.recipe != null)
+          TextButton(
+            onPressed: _saving ? null : () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
       ],
     ),
   );
 }
 
+int? _enteredAmount(TextEditingController controller) =>
+    double.tryParse(controller.text)?.round();
+
 // ───────────────────────── Goals ─────────────────────────
+
+void showNutritionGoalsForm(
+  BuildContext context, {
+  NutritionGoalsStore? store,
+}) {
+  final activeStore = store ?? goalsStore;
+  showFormSheet(
+    context,
+    _GoalsForm(goals: activeStore.goals, store: activeStore),
+  );
+}
 
 class NutritionGoalsTab extends StatelessWidget {
   const NutritionGoalsTab({super.key, this.store});
@@ -544,10 +630,8 @@ class NutritionGoalsTab extends StatelessWidget {
               label: 'Edit Goals',
               icon: Icons.edit,
               color: AppColors.nutrition,
-              onPressed: () => showFormSheet(
-                context,
-                _GoalsForm(goals: g, store: activeStore),
-              ),
+              onPressed: () =>
+                  showNutritionGoalsForm(context, store: activeStore),
             ),
             _GoalRow(
               Icons.local_fire_department,
@@ -703,9 +787,10 @@ class _GoalsFormState extends State<_GoalsForm> {
 // ───────────────────────── Recipes ─────────────────────────
 
 class NutritionRecipesTab extends StatelessWidget {
-  const NutritionRecipesTab({super.key, this.store});
+  const NutritionRecipesTab({super.key, this.store, this.food});
 
   final CollectionStore<Recipe>? store;
+  final CollectionStore<FoodEntry>? food;
 
   @override
   Widget build(BuildContext context) {
@@ -736,12 +821,16 @@ class NutritionRecipesTab extends StatelessWidget {
                 icon: Icons.menu_book,
                 color: AppColors.nutrition,
                 title: r.name,
-                subtitle: '${r.calories} cal  •  ${r.protein} g protein',
+                subtitle: _recipeNutrition(r),
                 extra: '${r.ingredientList.length} ingredients',
                 onTap: () => showFormSheet(
                   context,
                   _RecipeDetail(
                     recipe: r,
+                    onAddToFoodLog: () => showFormSheet(
+                      context,
+                      _FoodForm(store: food ?? foodStore, recipe: r),
+                    ),
                     onEdit: () => showFormSheet(
                       context,
                       _RecipeForm(existing: r, store: activeStore),
@@ -766,11 +855,22 @@ class NutritionRecipesTab extends StatelessWidget {
   }
 }
 
+String _recipeNutrition(Recipe recipe) {
+  final values = [
+    if (recipe.calories case final calories?) '$calories cal',
+    if (recipe.protein case final protein?) '$protein g protein',
+    if (recipe.carbs case final carbs?) '$carbs g carbs',
+    if (recipe.fat case final fat?) '$fat g fat',
+  ];
+  return values.isEmpty ? 'Nutrition not set' : values.join('  •  ');
+}
+
 class _RecipeDetail extends StatelessWidget {
   final Recipe recipe;
-  final VoidCallback onEdit, onDelete;
+  final VoidCallback onAddToFoodLog, onEdit, onDelete;
   const _RecipeDetail({
     required this.recipe,
+    required this.onAddToFoodLog,
     required this.onEdit,
     required this.onDelete,
   });
@@ -785,7 +885,7 @@ class _RecipeDetail extends StatelessWidget {
       children: [
         SheetTitle(recipe.name),
         Text(
-          '${recipe.calories} cal  •  ${recipe.protein} g protein',
+          _recipeNutrition(recipe),
           style: const TextStyle(color: AppColors.muted),
         ),
         if (ingredients.isNotEmpty) ...[
@@ -808,6 +908,19 @@ class _RecipeDetail extends StatelessWidget {
             ),
         ],
         const SizedBox(height: 20),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop();
+              onAddToFoodLog();
+            },
+            style: FilledButton.styleFrom(backgroundColor: AppColors.nutrition),
+            icon: const Icon(Icons.add),
+            label: const Text('Add to Food Log'),
+          ),
+        ),
+        const SizedBox(height: 8),
         Row(
           children: [
             Expanded(
@@ -856,8 +969,8 @@ class _RecipeFormState extends State<_RecipeForm> {
     super.initState();
     final r = widget.existing;
     name = TextEditingController(text: r?.name ?? '');
-    calories = TextEditingController(text: r == null ? '' : '${r.calories}');
-    protein = TextEditingController(text: r == null ? '' : '${r.protein}');
+    calories = TextEditingController(text: r?.calories?.toString());
+    protein = TextEditingController(text: r?.protein?.toString());
     ingredients = TextEditingController(text: r?.ingredients ?? '');
     steps = TextEditingController(text: r?.steps ?? '');
   }
@@ -877,8 +990,10 @@ class _RecipeFormState extends State<_RecipeForm> {
       Recipe(
         id: widget.existing?.id ?? widget.store.newId(),
         name: name.text.trim(),
-        calories: (double.tryParse(calories.text) ?? 0).round(),
-        protein: (double.tryParse(protein.text) ?? 0).round(),
+        calories: _enteredAmount(calories),
+        protein: _enteredAmount(protein),
+        carbs: widget.existing?.carbs,
+        fat: widget.existing?.fat,
         ingredients: ingredients.text.trim(),
         steps: steps.text.trim(),
       ),
@@ -945,10 +1060,22 @@ class _RecipeFormState extends State<_RecipeForm> {
   );
 }
 
-void showAddFoodForm(BuildContext context, {String? meal, DateTime? date}) {
-  showFormSheet(context, _FoodForm(initialMeal: meal, initialDate: date));
+void showAddFoodForm(
+  BuildContext context, {
+  String? meal,
+  DateTime? date,
+  CollectionStore<FoodEntry>? store,
+}) {
+  showFormSheet(
+    context,
+    _FoodForm(store: store ?? foodStore, initialMeal: meal, initialDate: date),
+  );
 }
 
-void showEditFoodForm(BuildContext context, FoodEntry entry) {
-  showFormSheet(context, _FoodForm(existing: entry));
+void showEditFoodForm(
+  BuildContext context,
+  FoodEntry entry, {
+  CollectionStore<FoodEntry>? store,
+}) {
+  showFormSheet(context, _FoodForm(store: store ?? foodStore, existing: entry));
 }

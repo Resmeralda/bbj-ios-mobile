@@ -1,14 +1,27 @@
 import 'package:flutter/material.dart';
 
+import '../data/collection_store.dart';
 import '../data/stores.dart';
 import '../models/health_models.dart';
+import '../models/nutrition_progress.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/form_helpers.dart';
 import 'nutrition_tabs.dart';
 
 class NutritionScreen extends StatefulWidget {
-  const NutritionScreen({super.key});
+  const NutritionScreen({
+    super.key,
+    this.weights,
+    this.food,
+    this.targets,
+    this.recipes,
+  });
+
+  final CollectionStore<WeightEntry>? weights;
+  final CollectionStore<FoodEntry>? food;
+  final NutritionGoalsStore? targets;
+  final CollectionStore<Recipe>? recipes;
 
   @override
   State<NutritionScreen> createState() => _NutritionScreenState();
@@ -18,8 +31,11 @@ class _NutritionScreenState extends State<NutritionScreen> {
   int tab = 0;
   DateTime selectedDate = DateUtils.dateOnly(DateTime.now());
 
+  CollectionStore<FoodEntry> get _food => widget.food ?? foodStore;
+  NutritionGoalsStore get _targets => widget.targets ?? goalsStore;
+
   bool isSameDay(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
+      DateUtils.isSameDay(a.toLocal(), b.toLocal());
 
   bool get isToday => isSameDay(selectedDate, DateTime.now());
 
@@ -73,21 +89,28 @@ class _NutritionScreenState extends State<NutritionScreen> {
     title: 'Nutrition',
     color: AppColors.nutrition,
     actionIcon: Icons.settings,
+    onAction: () => showNutritionGoalsForm(context, store: _targets),
     tabs: const ['Log', 'Progress', 'Goals', 'Recipes'],
     responsiveTabs: true,
     tab: tab,
     onTab: (i) => setState(() => tab = i),
     children: tab == 1
-        ? const [NutritionProgressTab()]
+        ? [
+            NutritionProgressTab(
+              weights: widget.weights,
+              food: _food,
+              targets: _targets,
+            ),
+          ]
         : tab == 2
-        ? const [NutritionGoalsTab()]
+        ? [NutritionGoalsTab(store: _targets)]
         : tab == 3
-        ? const [NutritionRecipesTab()]
+        ? [NutritionRecipesTab(store: widget.recipes, food: _food)]
         : [
             ListenableBuilder(
-              listenable: Listenable.merge([foodStore, goalsStore]),
+              listenable: Listenable.merge([_food, _targets]),
               builder: (context, _) {
-                final foods = foodStore.items
+                final foods = _food.items
                     .where((f) => isSameDay(f.date, selectedDate))
                     .toList();
 
@@ -101,15 +124,16 @@ class _NutritionScreenState extends State<NutritionScreen> {
 
                 final fat = foods.fold<int>(0, (sum, f) => sum + f.fat);
 
-                final goals = goalsStore.goals;
+                final goals = _targets.goals;
                 final calorieGoal = goals.calories;
                 final proteinGoal = goals.protein;
                 final carbsGoal = goals.carbs;
                 final fatGoal = goals.fat;
 
-                final calorieProgress = calorieGoal > 0
-                    ? (calories / calorieGoal).clamp(0.0, 1.0).toDouble()
-                    : 0.0;
+                final calorieProgress = calorieGoalProgress(
+                  calories,
+                  calorieGoal,
+                );
 
                 final proteinProgress = proteinGoal > 0
                     ? (protein / proteinGoal).clamp(0.0, 1.0).toDouble()
@@ -182,7 +206,9 @@ class _NutritionScreenState extends State<NutritionScreen> {
                                       ),
                                     ),
                                     Text(
-                                      'of $calorieGoal\ncalories',
+                                      calorieGoal > 0
+                                          ? 'of $calorieGoal\ncalories'
+                                          : 'calories\nNo target set',
                                       textAlign: TextAlign.center,
                                       style: const TextStyle(
                                         color: AppColors.muted,
@@ -237,6 +263,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
                             context,
                             meal: 'Breakfast',
                             date: selectedDate,
+                            store: _food,
                           ),
                         ),
                         QuickTile(
@@ -247,6 +274,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
                             context,
                             meal: 'Lunch',
                             date: selectedDate,
+                            store: _food,
                           ),
                         ),
                         QuickTile(
@@ -257,6 +285,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
                             context,
                             meal: 'Dinner',
                             date: selectedDate,
+                            store: _food,
                           ),
                         ),
                         QuickTile(
@@ -267,6 +296,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
                             context,
                             meal: 'Snack',
                             date: selectedDate,
+                            store: _food,
                           ),
                         ),
                       ],
@@ -277,14 +307,17 @@ class _NutritionScreenState extends State<NutritionScreen> {
                     SectionHeader(
                       mealsHeading,
                       action: 'Add Food +',
-                      onAction: () =>
-                          showAddFoodForm(context, date: selectedDate),
+                      onAction: () => showAddFoodForm(
+                        context,
+                        date: selectedDate,
+                        store: _food,
+                      ),
                     ),
 
-                    if (foodStore.loading)
+                    if (_food.loading)
                       const Center(child: CircularProgressIndicator())
-                    else if (foodStore.error != null)
-                      EmptyState(foodStore.error!)
+                    else if (_food.error != null)
+                      EmptyState(_food.error!)
                     else if (foods.isEmpty)
                       const AppCard(
                         child: Text('No meals logged for this day.'),
@@ -322,13 +355,17 @@ class _NutritionScreenState extends State<NutritionScreen> {
                                       const Icon(Icons.chevron_right),
                                     ],
                                   ),
-                                  onTap: () => showEditFoodForm(context, food),
+                                  onTap: () => showEditFoodForm(
+                                    context,
+                                    food,
+                                    store: _food,
+                                  ),
                                   onLongPress: () async {
                                     if (await confirmDelete(
                                       context,
                                       'food entry',
                                     )) {
-                                      foodStore.delete(food.id);
+                                      _food.delete(food.id);
                                     }
                                   },
                                 ),

@@ -44,13 +44,13 @@ Future<bool> confirmDelete(BuildContext context, String what) async {
 
 String? requiredPositive(String? v) {
   final n = double.tryParse(v ?? '');
-  return (n == null || n <= 0) ? 'Enter a number above 0' : null;
+  return (n == null || !n.isFinite || n <= 0) ? 'Enter a number above 0' : null;
 }
 
 String? optionalNumber(String? v) {
   if (v == null || v.trim().isEmpty) return null;
   final n = double.tryParse(v);
-  return (n == null || n < 0) ? 'Enter a valid number' : null;
+  return (n == null || !n.isFinite || n < 0) ? 'Enter a valid number' : null;
 }
 
 String? requiredText(String? v, String message) =>

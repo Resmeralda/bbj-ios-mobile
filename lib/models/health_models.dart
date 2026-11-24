@@ -5,14 +5,30 @@ DateTime _recoveryDate(Object? value) =>
     (throw const FormatException('Recovery record has no valid date.'));
 int? _recoveryRating(Object? value) =>
     value is int && value >= 1 && value <= 5 ? value : null;
-double _num(Object? v, [double d = 0]) => (v as num?)?.toDouble() ?? d;
+double _num(Object? v) => (v as num?)?.toDouble() ?? 0;
 int _int(Object? v, [int d = 0]) => (v as num?)?.toInt() ?? d;
+int? _recordedNutrient(Object? value) =>
+    value is num && value.isFinite && value >= 0 ? value.toInt() : null;
 String _str(Object? v) => v is String ? v : '';
 List<String> _lines(String s) =>
     s.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
 
+double _weightValue(Object? value) {
+  final pounds = value is num ? value.toDouble() : 0.0;
+  return WeightEntry.validPounds(pounds) ? pounds : 0;
+}
+
+int _calorieTarget(Object? value) {
+  if (value == null) return const NutritionGoals().calories;
+  if (value is! num || !value.isFinite || value < 0) return 0;
+  final target = value.toInt();
+  return value == target ? target : 0;
+}
+
 /// users/{uid}/weights/{id}
 class WeightEntry {
+  static bool validPounds(double pounds) => pounds.isFinite && pounds > 0;
+
   final String id;
   final DateTime date;
   final double pounds;
@@ -22,8 +38,15 @@ class WeightEntry {
     required this.pounds,
   });
 
-  factory WeightEntry.fromMap(String id, Map<String, dynamic> m) =>
-      WeightEntry(id: id, date: _date(m['date']), pounds: _num(m['pounds']));
+  factory WeightEntry.fromMap(String id, Map<String, dynamic> m) {
+    final rawDate = m['date'];
+    final date = rawDate is String ? DateTime.tryParse(rawDate) : null;
+    return WeightEntry(
+      id: id,
+      date: date ?? DateTime.now(),
+      pounds: date == null ? 0 : _weightValue(m['pounds']),
+    );
+  }
 
   Map<String, dynamic> toMap() => {
     'date': date.toIso8601String(),
@@ -39,20 +62,22 @@ class FoodEntry {
   final DateTime date;
   final String meal;
   final String name;
-  final int calories;
-  final int protein;
-  final int carbs;
-  final int fat;
+  final int? _calories, _protein, _carbs, _fat;
+
+  int get calories => _calories ?? 0;
+  int get protein => _protein ?? 0;
+  int get carbs => _carbs ?? 0;
+  int get fat => _fat ?? 0;
 
   const FoodEntry({
     required this.id,
     required this.date,
     required this.meal,
     required this.name,
-    required this.calories,
-    required this.protein,
-    this.carbs = 0,
-    this.fat = 0,
+    required this._calories,
+    required this._protein,
+    this._carbs = 0,
+    this._fat = 0,
   });
 
   factory FoodEntry.fromMap(String id, Map<String, dynamic> m) => FoodEntry(
@@ -60,20 +85,20 @@ class FoodEntry {
     date: _date(m['date']),
     meal: mealTypes.contains(m['meal']) ? m['meal'] as String : 'Snack',
     name: _str(m['name']),
-    calories: _int(m['calories']),
-    protein: _int(m['protein']),
-    carbs: _int(m['carbs']),
-    fat: _int(m['fat']),
+    calories: _recordedNutrient(m['calories']),
+    protein: _recordedNutrient(m['protein']),
+    carbs: _recordedNutrient(m['carbs']),
+    fat: _recordedNutrient(m['fat']),
   );
 
   Map<String, dynamic> toMap() => {
     'date': date.toIso8601String(),
     'meal': meal,
     'name': name,
-    'calories': calories,
-    'protein': protein,
-    'carbs': carbs,
-    'fat': fat,
+    'calories': ?_calories,
+    'protein': ?_protein,
+    'carbs': ?_carbs,
+    'fat': ?_fat,
   };
 }
 
@@ -81,8 +106,7 @@ class FoodEntry {
 class Recipe {
   final String id;
   final String name;
-  final int calories;
-  final int protein;
+  final int? calories, protein, carbs, fat;
   final String ingredients; // one per line
   final String steps; // one per line
   const Recipe({
@@ -90,6 +114,8 @@ class Recipe {
     required this.name,
     required this.calories,
     required this.protein,
+    this.carbs,
+    this.fat,
     required this.ingredients,
     required this.steps,
   });
@@ -100,16 +126,20 @@ class Recipe {
   factory Recipe.fromMap(String id, Map<String, dynamic> m) => Recipe(
     id: id,
     name: _str(m['name']),
-    calories: _int(m['calories']),
-    protein: _int(m['protein']),
+    calories: _recordedNutrient(m['calories']),
+    protein: _recordedNutrient(m['protein']),
+    carbs: _recordedNutrient(m['carbs']),
+    fat: _recordedNutrient(m['fat']),
     ingredients: _str(m['ingredients']),
     steps: _str(m['steps']),
   );
 
   Map<String, dynamic> toMap() => {
     'name': name,
-    'calories': calories,
-    'protein': protein,
+    'calories': ?calories,
+    'protein': ?protein,
+    'carbs': ?carbs,
+    'fat': ?fat,
     'ingredients': ingredients,
     'steps': steps,
   };
@@ -133,12 +163,12 @@ class NutritionGoals {
   });
 
   factory NutritionGoals.fromMap(Map<String, dynamic> m) => NutritionGoals(
-    calories: _int(m['calories'], 2000),
+    calories: _calorieTarget(m['calories']),
     protein: _int(m['protein'], 150),
     carbs: _int(m['carbs'], 225),
     fat: _int(m['fat'], 65),
     waterOz: _int(m['waterOz'], 80),
-    goalWeight: _num(m['goalWeight']),
+    goalWeight: _weightValue(m['goalWeight']),
   );
 
   Map<String, dynamic> toMap() => {

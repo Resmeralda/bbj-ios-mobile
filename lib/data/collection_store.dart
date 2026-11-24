@@ -92,6 +92,15 @@ class CollectionStore<T> extends ChangeNotifier {
   /// Adds or replaces the document with the same id.
   void save(T item) => _write(() => _col?.doc(idOf(item)).set(toMap(item)));
 
+  /// Waits for the write so a form can keep its draft on failure.
+  Future<void> saveConfirmed(T item, {required Object account}) async {
+    final collection = _col;
+    if (collection == null || account != _account) {
+      throw StateError('Cannot save to a different or signed-out account.');
+    }
+    await collection.doc(idOf(item)).set(toMap(item));
+  }
+
   void delete(String id) => _write(() => _col?.doc(id).delete());
 
   void _write(Future<void>? Function() op) {
