@@ -63,9 +63,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         nutritionGoal: nutrition.text.trim(),
       ),
     );
+    final messenger = ScaffoldMessenger.of(context);
     context.pop();
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Profile updated')));
+    messenger.showSnackBar(const SnackBar(content: Text('Profile updated')));
   }
 
   @override

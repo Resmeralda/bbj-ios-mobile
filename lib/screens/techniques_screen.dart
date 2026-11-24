@@ -551,7 +551,7 @@ class _VideoCard extends StatelessWidget {
                           : Image.network(
                               thumbnail,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
+                              errorBuilder: (_, _, _) =>
                                   Container(color: Colors.black87),
                             ),
                     ),

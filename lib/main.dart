@@ -21,9 +21,6 @@ Future<void> main() async {
     if (user?.uid == lastUid) return;
 
     lastUid = user?.uid;
-    
-debugPrint('Firebase user UID: ${user?.uid}');
-
     sessionStore.bind(user?.uid);
     bindUserData(user?.uid);
     profileStore.reset(name: user?.displayName);
