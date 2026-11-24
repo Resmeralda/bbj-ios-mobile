@@ -19,6 +19,7 @@ import 'screens/nutrition_screen.dart';
 import 'screens/recovery_screen.dart';
 import 'screens/recovery_details_screen.dart';
 import 'screens/recovery_settings_screen.dart';
+import 'screens/recovery_week_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/forgot_password_screen.dart';
@@ -187,6 +188,10 @@ GoRouter createAppRouter(
                 GoRoute(
                   path: 'settings',
                   builder: (_, _) => const RecoverySettingsScreen(),
+                ),
+                GoRoute(
+                  path: 'weekly',
+                  builder: (_, _) => const RecoveryWeekScreen(),
                 ),
               ],
             ),

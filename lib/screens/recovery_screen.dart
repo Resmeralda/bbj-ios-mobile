@@ -8,6 +8,7 @@ import '../data/recovery_settings_store.dart';
 import '../data/stores.dart';
 import '../models/health_models.dart';
 import '../models/recovery_score.dart';
+import '../models/recovery_week.dart';
 import '../models/training_session.dart' show formatDate;
 import '../theme.dart';
 import '../widgets/common.dart';
@@ -16,6 +17,7 @@ import 'recovery_habits_card.dart';
 import 'recovery_mobility_tab.dart';
 import 'recovery_score_widgets.dart';
 import 'recovery_tabs.dart';
+import 'recovery_week_widgets.dart';
 
 class RecoveryScreen extends StatefulWidget {
   const RecoveryScreen({
@@ -132,6 +134,8 @@ class _RecoveryScreenState extends State<RecoveryScreen>
     final lastNight = assessment.sleep;
     final settings = settingsStore.settings;
     final recentNote = notes.items.firstOrNull;
+    final records = RecoveryWeekRecords(sleep, wellness, mobility, notes);
+    final week = records.week(_day.value, _day.value);
     return [
       AppCard(
         child: Row(
@@ -284,13 +288,28 @@ class _RecoveryScreenState extends State<RecoveryScreen>
         notes: notes,
         habits: habits,
       ),
-      const SectionHeader('This Week', action: 'View All'),
+      SectionHeader(
+        'This Week',
+        action: 'View All',
+        onAction: () => context.push('/recovery/weekly'),
+      ),
       Row(
         children: [
-          const _Trend('Avg Sleep'),
-          const _Trend('Avg Energy'),
-          const _Trend('Avg Soreness'),
-          _Trend('Avg HRV', hidden: settings?.showHrv == false),
+          for (final (metric, color) in const [
+            (RecoveryWeekMetric.sleep, AppColors.recovery),
+            (RecoveryWeekMetric.energy, Colors.green),
+            (RecoveryWeekMetric.soreness, Colors.orange),
+            (RecoveryWeekMetric.hrv, Colors.blue),
+          ])
+            RecoveryWeekTrend(
+              metric: metric,
+              week: week,
+              color: color,
+              status: records.status(metric.activity),
+              hidden:
+                  metric == RecoveryWeekMetric.hrv &&
+                  settings?.showHrv == false,
+            ),
         ],
       ),
       SectionHeader(
@@ -359,45 +378,4 @@ class _Metric extends StatelessWidget {
       ],
     ),
   );
-}
-
-class _Trend extends StatelessWidget {
-  const _Trend(this.label, {this.hidden = false});
-
-  final String label;
-  final bool hidden;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Card(
-        color: Colors.white,
-        elevation: 0,
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                hidden ? 'Hidden' : '—',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              Text(
-                label,
-                style: const TextStyle(fontSize: 10, color: AppColors.muted),
-              ),
-              const SizedBox(height: 8),
-              const SizedBox(
-                height: 36,
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Divider(height: 1, color: Colors.black12),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }

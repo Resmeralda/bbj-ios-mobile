@@ -1,11 +1,14 @@
 import 'package:bjj_app/data/collection_store.dart';
 import 'package:bjj_app/data/recovery_settings_store.dart';
 import 'package:bjj_app/models/health_models.dart';
+import 'package:bjj_app/models/recovery_settings.dart';
 import 'package:bjj_app/models/training_session.dart' show formatDate;
 import 'package:bjj_app/screens/recovery_details_screen.dart';
 import 'package:bjj_app/screens/recovery_screen.dart';
 import 'package:bjj_app/screens/recovery_score_widgets.dart';
 import 'package:bjj_app/screens/recovery_settings_screen.dart';
+import 'package:bjj_app/screens/recovery_week_screen.dart';
+import 'package:bjj_app/screens/recovery_week_widgets.dart';
 import 'package:bjj_app/widgets/common.dart';
 import 'package:bjj_app/widgets/form_helpers.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
@@ -107,6 +110,19 @@ Future<FakeFirebaseFirestore> _openRecovery(
             path: 'settings',
             builder: (_, _) => RecoverySettingsScreen(store: settings),
           ),
+          GoRoute(
+            path: 'weekly',
+            builder: (_, _) => RecoveryWeekScreen(
+              records: RecoveryWeekRecords(
+                recovery.sleep!,
+                recovery.wellness!,
+                recovery.mobility!,
+                recovery.notes!,
+              ),
+              settings: settings,
+              clock: clock,
+            ),
+          ),
         ],
       ),
     ],
@@ -139,6 +155,11 @@ Finder _recentNotesLink() => find.descendant(
   matching: find.text('View All'),
 );
 
+Finder _weeklyLink() => find.descendant(
+  of: find.widgetWithText(SectionHeader, 'This Week'),
+  matching: find.text('View All'),
+);
+
 Finder _goalInput() => find.widgetWithText(TextFormField, 'Sleep goal (hours)');
 
 void _expectScore(WidgetTester tester, int? score, Color color) {
@@ -168,6 +189,218 @@ Future<void> _tallViewport(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('Weekly calendar stays within range for the first partial week', (
+    tester,
+  ) async {
+    await _tallViewport(tester);
+    await _openRecovery(tester, clock: () => DateTime(2020, 1, 6));
+    await _tap(tester, _weeklyLink());
+    await _tap(tester, find.byTooltip('Previous recovery week'));
+    expect(find.textContaining('Dec 30, 2019'), findsOneWidget);
+    final previous = tester.widget<IconButton>(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is IconButton && widget.tooltip == 'Previous recovery week',
+      ),
+    );
+    expect(previous.onPressed, isNull);
+    await _tap(tester, find.byTooltip('Choose recovery week'));
+    expect(find.byType(DatePickerDialog), findsOneWidget);
+    await _tap(tester, find.text('Cancel'));
+    expect(find.textContaining('Dec 30, 2019'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+    'Overview and weekly summary compare actual records and update live',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(800, 2200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final today = DateTime(2026, 11, 24);
+      final firestore = await _openRecovery(tester, clock: () => today);
+      final user = firestore.collection('users').doc(_uid);
+      final sleep = user.collection('sleep');
+      final monday = DateTime(2026, 11, 23).toIso8601String();
+      final tuesday = today.toIso8601String();
+      final lastMonday = DateTime(2026, 11, 16).toIso8601String();
+      final future = DateTime(2026, 11, 25).toIso8601String();
+      await sleep.doc('mon-a').set({'date': monday, 'hours': 6});
+      await sleep.doc('mon-b').set({'date': monday, 'hours': 10});
+      await sleep.doc('tue').set({'date': tuesday, 'hours': 4});
+      await sleep.doc('last').set({'date': lastMonday, 'hours': 7});
+      await sleep.doc('future').set({'date': future, 'hours': 12});
+      final wellness = user.collection('wellness');
+      await wellness.doc('mon-a').set({
+        'date': monday,
+        'energy': 1,
+        'soreness': 2,
+        'mood': 2,
+        'hrv': 60,
+      });
+      await wellness.doc('mon-b').set({
+        'date': monday,
+        'energy': 5,
+        'soreness': 4,
+        'mood': 4,
+      });
+      await wellness.doc('tue').set({
+        'date': tuesday,
+        'energy': 5,
+        'mood': 5,
+        'hrv': 80,
+      });
+      await wellness.doc('last').set({
+        'date': lastMonday,
+        'energy': 2,
+        'soreness': 1,
+        'mood': 3,
+        'hrv': 65,
+      });
+      final mobility = user.collection('mobility');
+      for (final (id, date, minutes) in [
+        ('mon-a', monday, 10),
+        ('mon-b', monday, 15),
+        ('last', lastMonday, 18),
+      ]) {
+        await mobility.doc(id).set({
+          'date': date,
+          'activity': 'yoga',
+          'minutes': minutes,
+        });
+      }
+      await user.collection('recovery_notes').doc('note').set({
+        'date': monday,
+        'title': 'Actual note',
+      });
+      await tester.pumpAndSettle();
+      final overview = find.byType(RecoveryWeekTrend);
+      expect(overview, findsNWidgets(4));
+      for (final value in ['6.0 hr', '4.0 / 5', '3.0 / 5', '70 ms']) {
+        expect(
+          find.descendant(of: overview, matching: find.text(value)),
+          findsOneWidget,
+        );
+      }
+      expect(find.byTooltip('Mon Sleep: 8.0 hr'), findsOneWidget);
+      expect(find.byTooltip('Wed Sleep: 12.0 hr'), findsNothing);
+      await _tap(tester, _weeklyLink());
+      expect(find.text('Weekly Recovery Summary'), findsOneWidget);
+      expect(find.text('This week'), findsWidgets);
+      expect(find.text('Last week'), findsWidgets);
+      expect(find.textContaining('Nov 23'), findsOneWidget);
+      expect(find.textContaining('Nov 16'), findsOneWidget);
+      expect(find.text('25 min'), findsOneWidget);
+      expect(find.text('18 min'), findsOneWidget);
+      expect(find.text('2 recorded days'), findsWidgets);
+      expect(find.text('1 recorded day'), findsWidgets);
+      expect(find.byTooltip('Selected week Mon Sleep: 8.0 hr'), findsOneWidget);
+      expect(find.byTooltip('Previous week Mon Sleep: 7.0 hr'), findsOneWidget);
+      expect(
+        find.byTooltip('Selected week Tue Soreness: 0.0 / 5'),
+        findsNothing,
+      );
+      expect(find.byTooltip('Selected week Wed Sleep: 12.0 hr'), findsNothing);
+      expect(find.byTooltip('Selected week Tue Mood: 5.0 / 5'), findsOneWidget);
+      final sleepTotals = find.widgetWithText(Row, 'Sleep logs');
+      expect(
+        find.descendant(of: sleepTotals, matching: find.text('3')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: sleepTotals, matching: find.text('1')),
+        findsOneWidget,
+      );
+      expect(find.text('Recovery notes'), findsOneWidget);
+      expect(
+        tester
+            .widget<IconButton>(
+              find.byWidgetPredicate(
+                (widget) =>
+                    widget is IconButton &&
+                    widget.tooltip == 'Next recovery week',
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+
+      await sleep.doc('tue').update({'hours': 8});
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Selected week Tue Sleep: 8.0 hr'), findsOneWidget);
+      await mobility.doc('mon-a').delete();
+      await tester.pumpAndSettle();
+      expect(find.text('25 min'), findsNothing);
+      expect(find.text('15 min'), findsOneWidget);
+
+      await _tap(tester, find.byTooltip('Previous recovery week'));
+      expect(find.text('Selected week'), findsWidgets);
+      expect(find.byTooltip('Selected week Mon Sleep: 7.0 hr'), findsOneWidget);
+      await _tap(tester, find.byTooltip('Next recovery week'));
+      expect(find.text('Last week'), findsWidgets);
+      await _tap(tester, find.byTooltip('Choose recovery week'));
+      expect(find.byType(DatePickerDialog), findsOneWidget);
+      await _tap(tester, find.text('19'));
+      await _tap(tester, find.text('OK'));
+      expect(find.byTooltip('Selected week Mon Sleep: 7.0 hr'), findsOneWidget);
+      expect(find.textContaining('Nov 9'), findsOneWidget);
+      await _tap(tester, find.byType(BackButton));
+      expect(find.byTooltip('Tue Sleep: 8.0 hr'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'Weekly summary handles empty weeks and hides HRV when disabled',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 1600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final today = DateTime(2026, 11, 24);
+      final firestore = await _openRecovery(tester, clock: () => today);
+      await _tap(tester, _weeklyLink());
+      expect(
+        find.text('No recovery activities logged in either week.'),
+        findsOneWidget,
+      );
+      expect(find.text('No measurements'), findsWidgets);
+      expect(find.text('0.0 hr'), findsNothing);
+      await _tap(tester, find.byType(BackButton));
+
+      final screen = tester.widget<RecoveryScreen>(find.byType(RecoveryScreen));
+      final settings = screen.settings!;
+      await settings.save(
+        const RecoverySettings(showHrv: false),
+        account: settings.account,
+      );
+      await firestore.doc('users/$_uid/wellness/hrv').set({
+        'date': today.toIso8601String(),
+        'energy': 4,
+        'hrv': 72,
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('Hidden'), findsOneWidget);
+      expect(find.byTooltip('Tue HRV: 72 ms'), findsNothing);
+      await _tap(tester, _weeklyLink());
+      expect(find.text('HRV'), findsNothing);
+      expect(
+        find.byTooltip('Selected week Tue Energy: 4.0 / 5'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('No recovery activities logged in either week.'),
+        findsNothing,
+      );
+      screen.wellness!.bind('other-athlete');
+      await tester.pumpAndSettle();
+      expect(
+        find.text('No recovery activities logged in either week.'),
+        findsOneWidget,
+      );
+      expect(find.byTooltip('Selected week Tue Energy: 4.0 / 5'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
   testWidgets('Overview shortcuts have equal bounds and aligned icons', (
     tester,
   ) async {
@@ -551,11 +784,17 @@ void main() {
     _expectScore(tester, null, Colors.grey);
     expect(find.text('4 / 5'), findsOneWidget);
     expect(find.text('2 / 5'), findsOneWidget);
-    expect(find.text('68 ms'), findsOneWidget);
+    final scoreCard = find.ancestor(
+      of: find.byType(RecoveryScoreRing),
+      matching: find.byType(AppCard),
+    );
+    Finder scoreValue(String value) =>
+        find.descendant(of: scoreCard, matching: find.text(value));
+    expect(scoreValue('68 ms'), findsOneWidget);
 
     await sleep.set({'date': date, 'hours': 7.5, 'quality': 5});
     await tester.pumpAndSettle();
-    expect(find.text('7.5 hr'), findsOneWidget);
+    expect(scoreValue('7.5 hr'), findsOneWidget);
     expect(find.text('5 / 5'), findsOneWidget);
     _expectScore(tester, null, Colors.grey);
 
