@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/health_models.dart';
 import 'collection_store.dart';
+import 'recovery_settings_store.dart';
 
 int _newestFirst(DateTime a, DateTime b) => b.compareTo(a);
 
@@ -56,6 +57,22 @@ final noteStore = CollectionStore<RecoveryNote>(
   compare: (a, b) => _newestFirst(a.date, b.date),
 );
 
+final mobilityStore = CollectionStore<MobilityEntry>(
+  path: 'mobility',
+  fromMap: MobilityEntry.fromMap,
+  toMap: (e) => e.toMap(),
+  idOf: (e) => e.id,
+  compare: (a, b) => _newestFirst(a.date, b.date),
+);
+
+final recoveryHabitStore = CollectionStore<RecoveryHabitDay>(
+  path: 'recovery_habits',
+  fromMap: RecoveryHabitDay.fromMap,
+  toMap: (day) => day.toMap(),
+  idOf: (day) => day.id,
+  compare: (a, b) => b.id.compareTo(a.id),
+);
+
 /// Nutrition goals: one document at users/{uid}/settings/nutrition.
 class NutritionGoalsStore extends ChangeNotifier {
   NutritionGoalsStore({FirebaseFirestore? firestore})
@@ -66,6 +83,8 @@ class NutritionGoalsStore extends ChangeNotifier {
   NutritionGoals goals = const NutritionGoals();
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _sub;
   String? _uid;
+  Object _account = Object();
+  Object get account => _account;
 
   DocumentReference<Map<String, dynamic>>? get _doc => _uid == null
       ? null
@@ -80,6 +99,7 @@ class NutritionGoalsStore extends ChangeNotifier {
     _sub?.cancel();
     _sub = null;
     _uid = uid;
+    _account = Object();
     goals = const NutritionGoals();
     notifyListeners();
     if (uid == null) return;
@@ -118,5 +138,8 @@ void bindUserData(String? uid) {
   sleepStore.bind(uid);
   wellnessStore.bind(uid);
   noteStore.bind(uid);
+  mobilityStore.bind(uid);
+  recoveryHabitStore.bind(uid);
   goalsStore.bind(uid);
+  unawaited(recoverySettingsStore.bind(uid));
 }

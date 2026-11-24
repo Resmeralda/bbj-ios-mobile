@@ -11,6 +11,7 @@ class ScreenScaffold extends StatelessWidget {
   final List<String> tabs;
   final int tab;
   final ValueChanged<int>? onTab;
+  final bool responsiveTabs;
   final List<Widget> children;
   final EdgeInsetsGeometry bodyPadding;
 
@@ -24,8 +25,97 @@ class ScreenScaffold extends StatelessWidget {
     this.tabs = const [],
     this.tab = 0,
     this.onTab,
+    this.responsiveTabs = false,
     this.bodyPadding = const EdgeInsets.all(16),
   });
+
+  Widget _tabButton(int index, {double? width, double padding = 16}) =>
+      SizedBox(
+        width: width,
+        child: Material(
+          color: index == tab ? Colors.white : Colors.black26,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => onTab?.call(index),
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: padding, vertical: 12),
+              child: Text(
+                tabs[index],
+                maxLines: 1,
+                softWrap: false,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: index == tab ? AppColors.ink : Colors.white,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+  Widget _buildTabs() {
+    if (!responsiveTabs) {
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (var i = 0; i < tabs.length; i++)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: _tabButton(i),
+              ),
+          ],
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      key: ValueKey('$title tabs'),
+      builder: (context, constraints) {
+        const spacing = 4.0;
+        const minimumPadding = 4.0;
+        final painter = TextPainter(
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          locale: Localizations.maybeLocaleOf(context),
+          maxLines: 1,
+        );
+        final style = Theme.of(context).textTheme.bodyMedium;
+        var longestLabel = 0.0;
+        for (final label in tabs) {
+          painter.text = TextSpan(text: label, style: style);
+          painter.layout();
+          if (painter.width > longestLabel) longestLabel = painter.width;
+        }
+        painter.dispose();
+
+        final minimumWidth = (longestLabel.ceilToDouble() + minimumPadding * 2)
+            .clamp(48.0, double.infinity);
+        final idealWidth =
+            (constraints.maxWidth - spacing * (tabs.length - 1)) / tabs.length;
+        final width = idealWidth < minimumWidth ? minimumWidth : idealWidth;
+        final padding = ((width - longestLabel) / 2).clamp(
+          minimumPadding,
+          16.0,
+        );
+        final row = Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: spacing,
+          children: [
+            for (var i = 0; i < tabs.length; i++)
+              _tabButton(i, width: width, padding: padding),
+          ],
+        );
+        return idealWidth < minimumWidth
+            ? SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: row,
+              )
+            : row;
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -62,39 +152,7 @@ class ScreenScaffold extends StatelessWidget {
                 ),
                 if (tabs.isNotEmpty) ...[
                   const SizedBox(height: 14),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        for (var i = 0; i < tabs.length; i++)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: Material(
-                              color: i == tab ? Colors.white : Colors.black26,
-                              borderRadius: BorderRadius.circular(12),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(12),
-                                onTap: () => onTab?.call(i),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 12,
-                                  ),
-                                  child: Text(
-                                    tabs[i],
-                                    maxLines: 1,
-                                    softWrap: false,
-                                    style: TextStyle(
-                                      color: i == tab ? AppColors.ink : Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
+                  _buildTabs(),
                 ],
               ],
             ),
@@ -105,10 +163,7 @@ class ScreenScaffold extends StatelessWidget {
                 color: AppColors.background,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
               ),
-              child: ListView(
-                padding: bodyPadding,
-                children: children,
-              ),
+              child: ListView(padding: bodyPadding, children: children),
             ),
           ),
         ],

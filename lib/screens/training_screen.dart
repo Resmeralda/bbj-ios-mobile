@@ -43,6 +43,7 @@ class _TrainingScreenState extends State<TrainingScreen> {
         actionIcon: Icons.add,
         onAction: () => context.push('/training/log'),
         tabs: const ['Log', 'History', 'Techniques'],
+        responsiveTabs: true,
         tab: tab,
         onTab: (i) => setState(() => tab = i),
         children: tab == 1

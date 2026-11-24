@@ -1,4 +1,3 @@
-
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -28,6 +27,8 @@ class CollectionStore<T> extends ChangeNotifier {
   List<T> _items = [];
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _sub;
   String? _uid;
+  Object _account = Object();
+  Object get account => _account;
   bool loading = false;
   String? error;
 
@@ -45,6 +46,7 @@ class CollectionStore<T> extends ChangeNotifier {
     _sub?.cancel();
     _sub = null;
     _uid = uid;
+    _account = Object();
     _items = [];
     error = null;
 
@@ -90,10 +92,21 @@ class CollectionStore<T> extends ChangeNotifier {
   /// Adds or replaces the document with the same id.
   void save(T item) => _write(() => _col?.doc(idOf(item)).set(toMap(item)));
 
+  /// Waits for the write so a form can keep its draft on failure.
+  Future<void> saveConfirmed(T item, {required Object account}) async {
+    final collection = _col;
+    if (collection == null || account != _account) {
+      throw StateError('Cannot save to a different or signed-out account.');
+    }
+    await collection.doc(idOf(item)).set(toMap(item));
+  }
+
   void delete(String id) => _write(() => _col?.doc(id).delete());
 
   void _write(Future<void>? Function() op) {
+    final account = _account;
     op()?.catchError((Object e) {
+      if (account != _account) return;
       debugPrint('$path write failed: $e');
       error = 'Could not save your changes.';
       notifyListeners();
@@ -102,6 +115,7 @@ class CollectionStore<T> extends ChangeNotifier {
 
   @override
   void dispose() {
+    _account = Object();
     _sub?.cancel();
     super.dispose();
   }

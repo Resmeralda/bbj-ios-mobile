@@ -5,6 +5,7 @@ import '../models/training_session.dart';
 import '../session_store.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/form_helpers.dart';
 import '../widgets/session_tile.dart';
 
 /// Standalone history page (route /training/history).
@@ -33,15 +34,17 @@ class HistoryScreen extends StatelessWidget {
 
 /// History content, reused inline by the Training tab.
 class HistoryBody extends StatefulWidget {
-  const HistoryBody({super.key});
+  const HistoryBody({super.key, this.store});
+  final SessionStore? store;
   @override
   State<HistoryBody> createState() => _HistoryBodyState();
 }
 
 class _HistoryBodyState extends State<HistoryBody> {
   String filter = 'All';
+  SessionStore get _store => widget.store ?? sessionStore;
 
-  Future<bool> _confirmDelete(TrainingSession s) async {
+  Future<bool> _confirmDelete(TrainingSession s, Object account) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
@@ -59,11 +62,15 @@ class _HistoryBodyState extends State<HistoryBody> {
         ],
       ),
     );
-    return ok ?? false;
+    return ok == true &&
+        mounted &&
+        isCurrentFormAccount(context, account, _store.account);
   }
 
-  void _deleted(TrainingSession s) {
-    sessionStore.delete(s.id);
+  void _deleted(TrainingSession s, Object account) {
+    final store = _store;
+    if (!isCurrentFormAccount(context, account, store.account)) return;
+    store.delete(s.id);
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(
@@ -71,7 +78,11 @@ class _HistoryBodyState extends State<HistoryBody> {
           content: const Text('Session deleted'),
           action: SnackBarAction(
             label: 'Undo',
-            onPressed: () => sessionStore.add(s),
+            onPressed: () {
+              if (account == store.account) {
+                store.add(s);
+              }
+            },
           ),
         ),
       );
@@ -79,9 +90,10 @@ class _HistoryBodyState extends State<HistoryBody> {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: sessionStore,
+    listenable: _store,
     builder: (context, _) {
-      final all = sessionStore.sessions;
+      final all = _store.sessions;
+      final account = _store.account;
       final list = filter == 'All'
           ? all
           : all.where((s) => s.type == filter).toList();
@@ -100,10 +112,10 @@ class _HistoryBodyState extends State<HistoryBody> {
         }
         items.add(
           Dismissible(
-            key: ValueKey(s.id),
+            key: ValueKey((account, s.id)),
             direction: DismissDirection.endToStart,
-            confirmDismiss: (_) => _confirmDelete(s),
-            onDismissed: (_) => _deleted(s),
+            confirmDismiss: (_) => _confirmDelete(s, account),
+            onDismissed: (_) => _deleted(s, account),
             background: Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.only(right: 20),
