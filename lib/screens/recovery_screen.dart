@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'recovery_tabs.dart';
 
 class RecoveryScreen extends StatefulWidget {
   const RecoveryScreen({super.key});
@@ -19,8 +20,17 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
     actionIcon: Icons.settings,
     tabs: const ['Overview', 'Sleep', 'Wellness', 'Notes'],
     tab: tab,
-    onTab: (i) => setState(() => tab = i), // TODO: build other tabs
-    children: [
+    onTab: (i) => setState(() => tab = i),
+    children: switch (tab) {
+      1 => const [RecoverySleepTab()],
+      2 => const [RecoveryWellnessTab()],
+      3 => const [RecoveryNotesTab()],
+      _ => _overview(context),
+    },
+  );
+
+  List<Widget> _overview(BuildContext context) {
+    return [
       const AppCard(
         child: Row(
           children: [
@@ -102,19 +112,28 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
       ),
       Row(
         children: [
-          QuickTile(Icons.bed, 'Log Sleep', AppColors.recovery, onTap: () {}),
-          QuickTile(Icons.favorite, 'Log Wellness', Colors.red, onTap: () {}),
           QuickTile(
+            Icons.bed,
+            'Log Sleep',
+            AppColors.recovery,
+            onTap: () => showLogSleepForm(context),
+          ),
+          QuickTile(
+            Icons.favorite,
+            'Log Wellness',
+            Colors.red,
+            onTap: () => showLogWellnessForm(context),
+          ),
+          const QuickTile(
             Icons.self_improvement,
             'Mobility / Stretching',
             Colors.blue,
-            onTap: () {},
           ),
           QuickTile(
             Icons.note_add,
             'Add Note',
             Colors.amber.shade800,
-            onTap: () {},
+            onTap: () => showAddRecoveryNoteForm(context),
           ),
         ],
       ),
@@ -183,8 +202,8 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
           ],
         ),
       ),
-    ],
-  );
+    ];
+  }
 }
 
 class _Metric extends StatelessWidget {
