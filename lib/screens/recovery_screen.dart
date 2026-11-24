@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 
+import '../data/collection_store.dart';
+import '../data/stores.dart';
+import '../models/health_models.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import 'recovery_tabs.dart';
 
 class RecoveryScreen extends StatefulWidget {
-  const RecoveryScreen({super.key});
+  const RecoveryScreen({super.key, this.sleep, this.wellness, this.notes});
+
+  final CollectionStore<SleepEntry>? sleep;
+  final CollectionStore<WellnessEntry>? wellness;
+  final CollectionStore<RecoveryNote>? notes;
   @override
   State<RecoveryScreen> createState() => _RecoveryScreenState();
 }
@@ -22,9 +29,9 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
     tab: tab,
     onTab: (i) => setState(() => tab = i),
     children: switch (tab) {
-      1 => const [RecoverySleepTab()],
-      2 => const [RecoveryWellnessTab()],
-      3 => const [RecoveryNotesTab()],
+      1 => [RecoverySleepTab(store: widget.sleep ?? sleepStore)],
+      2 => [RecoveryWellnessTab(store: widget.wellness ?? wellnessStore)],
+      3 => [RecoveryNotesTab(store: widget.notes ?? noteStore)],
       _ => _overview(context),
     },
   );
@@ -116,13 +123,14 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
             Icons.bed,
             'Log Sleep',
             AppColors.recovery,
-            onTap: () => showLogSleepForm(context),
+            onTap: () => showLogSleepForm(context, widget.sleep ?? sleepStore),
           ),
           QuickTile(
             Icons.favorite,
             'Log Wellness',
             Colors.red,
-            onTap: () => showLogWellnessForm(context),
+            onTap: () =>
+                showLogWellnessForm(context, widget.wellness ?? wellnessStore),
           ),
           const QuickTile(
             Icons.self_improvement,
@@ -133,7 +141,8 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
             Icons.note_add,
             'Add Note',
             Colors.amber.shade800,
-            onTap: () => showAddRecoveryNoteForm(context),
+            onTap: () =>
+                showAddRecoveryNoteForm(context, widget.notes ?? noteStore),
           ),
         ],
       ),

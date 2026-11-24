@@ -29,10 +29,13 @@ jobs:
         run: flutter pub get
 
       - name: Run Flutter analysis
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings || true
+        run: flutter analyze
 
       - name: Run Flutter tests with coverage
-        run: flutter test test/collection_store_test.dart test/health_models_test.dart test/nutrition_goals_store_test.dart test/nutrition_goals_widget_test.dart test/nutrition_recipes_widget_test.dart --coverage
+        run: flutter test --coverage
+
+      - name: Verify Flutter coverage report
+        run: test -s coverage/lcov.info
 
       - name: Verify SonarQube token
         env:

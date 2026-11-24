@@ -1,20 +1,26 @@
 import 'package:flutter/material.dart';
 
-import '../data/stores.dart';
+import '../data/collection_store.dart';
 import '../models/health_models.dart';
 import '../models/training_session.dart' show formatDate;
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/form_helpers.dart';
 
-void showLogSleepForm(BuildContext context) =>
-    showFormSheet(context, const _SleepForm());
+void showLogSleepForm(
+  BuildContext context,
+  CollectionStore<SleepEntry> store,
+) => showFormSheet(context, _SleepForm(store: store));
 
-void showLogWellnessForm(BuildContext context) =>
-    showFormSheet(context, const _WellnessForm());
+void showLogWellnessForm(
+  BuildContext context,
+  CollectionStore<WellnessEntry> store,
+) => showFormSheet(context, _WellnessForm(store: store));
 
-void showAddRecoveryNoteForm(BuildContext context) =>
-    showFormSheet(context, const _NoteForm());
+void showAddRecoveryNoteForm(
+  BuildContext context,
+  CollectionStore<RecoveryNote> store,
+) => showFormSheet(context, _NoteForm(store: store));
 
 const _sleepGoalHours = 8.0;
 
@@ -24,13 +30,15 @@ double _avg(Iterable<int> v) =>
 // ───────────────────────── Sleep ─────────────────────────
 
 class RecoverySleepTab extends StatelessWidget {
-  const RecoverySleepTab({super.key});
+  const RecoverySleepTab({super.key, required this.store});
+
+  final CollectionStore<SleepEntry> store;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: sleepStore,
+    listenable: store,
     builder: (context, _) {
-      final entries = sleepStore.items; // newest first
+      final entries = store.items; // newest first
       final last = entries.isEmpty ? null : entries.first;
       final week = entries.take(7).toList();
       final avg = week.isEmpty
@@ -44,7 +52,7 @@ class RecoverySleepTab extends StatelessWidget {
             label: 'Log Sleep',
             icon: Icons.bed,
             color: AppColors.recovery,
-            onPressed: () => showLogSleepForm(context),
+            onPressed: () => showLogSleepForm(context, store),
           ),
           AppCard(
             child: Column(
@@ -75,10 +83,10 @@ class RecoverySleepTab extends StatelessWidget {
             ),
           ),
           const SectionHeader('History'),
-          if (sleepStore.error != null) EmptyState(sleepStore.error!),
-          if (entries.isEmpty && sleepStore.error == null)
+          if (store.error != null) EmptyState(store.error!),
+          if (entries.isEmpty && store.error == null)
             EmptyState(
-              sleepStore.loading
+              store.loading
                   ? 'Loading…'
                   : 'No sleep logged yet. Tap Log Sleep to add a night.',
             ),
@@ -89,10 +97,11 @@ class RecoverySleepTab extends StatelessWidget {
               title: hoursLabel(e.hours),
               subtitle: '${formatDate(e.date)}  •  Quality ${e.quality}/5',
               extra: e.notes,
-              onTap: () => showFormSheet(context, _SleepForm(existing: e)),
+              onTap: () =>
+                  showFormSheet(context, _SleepForm(store: store, existing: e)),
               onDelete: () async {
                 if (await confirmDelete(context, 'sleep entry')) {
-                  sleepStore.delete(e.id);
+                  store.delete(e.id);
                 }
               },
             ),
@@ -103,8 +112,9 @@ class RecoverySleepTab extends StatelessWidget {
 }
 
 class _SleepForm extends StatefulWidget {
+  final CollectionStore<SleepEntry> store;
   final SleepEntry? existing;
-  const _SleepForm({this.existing});
+  const _SleepForm({required this.store, this.existing});
   @override
   State<_SleepForm> createState() => _SleepFormState();
 }
@@ -141,9 +151,9 @@ class _SleepFormState extends State<_SleepForm> {
 
   void _save() {
     if (!_key.currentState!.validate()) return;
-    sleepStore.save(
+    widget.store.save(
       SleepEntry(
-        id: widget.existing?.id ?? sleepStore.newId(),
+        id: widget.existing?.id ?? widget.store.newId(),
         date: date,
         hours: double.parse(hours.text),
         quality: quality,
@@ -197,13 +207,15 @@ class _SleepFormState extends State<_SleepForm> {
 // ───────────────────────── Wellness ─────────────────────────
 
 class RecoveryWellnessTab extends StatelessWidget {
-  const RecoveryWellnessTab({super.key});
+  const RecoveryWellnessTab({super.key, required this.store});
+
+  final CollectionStore<WellnessEntry> store;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: wellnessStore,
+    listenable: store,
     builder: (context, _) {
-      final entries = wellnessStore.items; // newest first
+      final entries = store.items; // newest first
       final week = entries.take(7).toList();
       String avg(int Function(WellnessEntry) f) =>
           week.isEmpty ? '—' : oneDecimal(_avg(week.map(f)));
@@ -219,7 +231,7 @@ class RecoveryWellnessTab extends StatelessWidget {
             label: 'Log Wellness',
             icon: Icons.favorite,
             color: AppColors.recovery,
-            onPressed: () => showLogWellnessForm(context),
+            onPressed: () => showLogWellnessForm(context, store),
           ),
           StatRow([
             StatCard('Energy', avg((e) => e.energy)),
@@ -236,10 +248,10 @@ class RecoveryWellnessTab extends StatelessWidget {
             ),
           ),
           const SectionHeader('History'),
-          if (wellnessStore.error != null) EmptyState(wellnessStore.error!),
-          if (entries.isEmpty && wellnessStore.error == null)
+          if (store.error != null) EmptyState(store.error!),
+          if (entries.isEmpty && store.error == null)
             EmptyState(
-              wellnessStore.loading
+              store.loading
                   ? 'Loading…'
                   : 'No check-ins yet. Tap Log Wellness to add one.',
             ),
@@ -253,10 +265,13 @@ class RecoveryWellnessTab extends StatelessWidget {
                   ? formatDate(e.date)
                   : '${formatDate(e.date)}  •  HRV ${e.hrv} ms',
               extra: e.notes,
-              onTap: () => showFormSheet(context, _WellnessForm(existing: e)),
+              onTap: () => showFormSheet(
+                context,
+                _WellnessForm(store: store, existing: e),
+              ),
               onDelete: () async {
                 if (await confirmDelete(context, 'check-in')) {
-                  wellnessStore.delete(e.id);
+                  store.delete(e.id);
                 }
               },
             ),
@@ -267,8 +282,9 @@ class RecoveryWellnessTab extends StatelessWidget {
 }
 
 class _WellnessForm extends StatefulWidget {
+  final CollectionStore<WellnessEntry> store;
   final WellnessEntry? existing;
-  const _WellnessForm({this.existing});
+  const _WellnessForm({required this.store, this.existing});
   @override
   State<_WellnessForm> createState() => _WellnessFormState();
 }
@@ -309,9 +325,9 @@ class _WellnessFormState extends State<_WellnessForm> {
   void _save() {
     if (!_key.currentState!.validate()) return;
     final hrvText = hrv.text.trim();
-    wellnessStore.save(
+    widget.store.save(
       WellnessEntry(
-        id: widget.existing?.id ?? wellnessStore.newId(),
+        id: widget.existing?.id ?? widget.store.newId(),
         date: date,
         energy: energy,
         soreness: soreness,
@@ -384,13 +400,15 @@ class _WellnessFormState extends State<_WellnessForm> {
 // ───────────────────────── Notes ─────────────────────────
 
 class RecoveryNotesTab extends StatelessWidget {
-  const RecoveryNotesTab({super.key});
+  const RecoveryNotesTab({super.key, required this.store});
+
+  final CollectionStore<RecoveryNote> store;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: noteStore,
+    listenable: store,
     builder: (context, _) {
-      final notes = noteStore.items; // newest first
+      final notes = store.items; // newest first
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -398,12 +416,12 @@ class RecoveryNotesTab extends StatelessWidget {
             label: 'Add Note',
             icon: Icons.note_add,
             color: AppColors.recovery,
-            onPressed: () => showAddRecoveryNoteForm(context),
+            onPressed: () => showAddRecoveryNoteForm(context, store),
           ),
-          if (noteStore.error != null) EmptyState(noteStore.error!),
-          if (notes.isEmpty && noteStore.error == null)
+          if (store.error != null) EmptyState(store.error!),
+          if (notes.isEmpty && store.error == null)
             EmptyState(
-              noteStore.loading
+              store.loading
                   ? 'Loading…'
                   : 'No notes yet. Tap Add Note to write one.',
             ),
@@ -414,10 +432,11 @@ class RecoveryNotesTab extends StatelessWidget {
               title: n.title,
               subtitle: formatDate(n.date),
               extra: n.body,
-              onTap: () => showFormSheet(context, _NoteForm(existing: n)),
+              onTap: () =>
+                  showFormSheet(context, _NoteForm(store: store, existing: n)),
               onDelete: () async {
                 if (await confirmDelete(context, 'note')) {
-                  noteStore.delete(n.id);
+                  store.delete(n.id);
                 }
               },
             ),
@@ -428,8 +447,9 @@ class RecoveryNotesTab extends StatelessWidget {
 }
 
 class _NoteForm extends StatefulWidget {
+  final CollectionStore<RecoveryNote> store;
   final RecoveryNote? existing;
-  const _NoteForm({this.existing});
+  const _NoteForm({required this.store, this.existing});
   @override
   State<_NoteForm> createState() => _NoteFormState();
 }
@@ -457,9 +477,9 @@ class _NoteFormState extends State<_NoteForm> {
 
   void _save() {
     if (!_key.currentState!.validate()) return;
-    noteStore.save(
+    widget.store.save(
       RecoveryNote(
-        id: widget.existing?.id ?? noteStore.newId(),
+        id: widget.existing?.id ?? widget.store.newId(),
         date: date,
         title: title.text.trim(),
         body: body.text.trim(),
