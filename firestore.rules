@@ -21,16 +21,20 @@ service cloud.firestore {
     }
     function admin() { return signedIn() && hasRole(request.auth.uid, 'admin'); }
     function trainer() { return signedIn() && hasRole(request.auth.uid, 'trainer'); }
+
+    // Require nonblank, length-limited text and restrict fields to each document's schema.
     function text(value, limit) {
       return value is string && value.size() <= limit && value.matches('(?s).*[^\\s].*');
     }
     function fields(data, names) {
       return data.keys().hasAll(names) && data.keys().hasOnly(names);
     }
+    // A review can change only decision fields and must identify the acting administrator.
     function reviewed(data, previous, extra) {
       return data.diff(previous).affectedKeys().hasOnly(['status', 'reviewerUid', 'reviewedAt'].concat(extra))
         && data.reviewerUid == request.auth.uid && data.reviewedAt == request.time;
     }
+    // Optional names and emails must match the caller's Firebase Auth identity.
     function identity(data) {
       return (!('accountName' in data)
           || (text(data.accountName, 120) && data.accountName == request.auth.token.get('name', null)))
@@ -69,6 +73,7 @@ service cloud.firestore {
     function techniqueFields() {
       return ['name', 'category', 'description', 'difficulty', 'instructor', 'videoUrl'];
     }
+    // Accept only supported categories, difficulty levels, and YouTube video links.
     function validTechnique(data) {
       return text(data.name, 120) && text(data.description, 3000)
         && text(data.instructor, 120)
@@ -89,6 +94,7 @@ service cloud.firestore {
         && data.publicationChangedAt == request.time
         && data.publicationChangedBy == request.auth.uid;
     }
+    // Linked catalog entries and their submission's publication state must change together.
     function linkedCreation(id) {
       let before = get(submissionPath(id)).data;
       let after = getAfter(submissionPath(id)).data;
@@ -108,10 +114,12 @@ service cloud.firestore {
         && getAfter(requestPath(uid)).data.status == to;
     }
 
+    // Only the account owner can read or write their personal data.
     match /users/{uid}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
 
+    // Signed-in users can browse the catalog. Only administrators can change it.
     match /techniques/{techniqueId} {
       allow read: if signedIn();
       allow create: if admin() && fields(request.resource.data, techniqueFields())
@@ -123,6 +131,8 @@ service cloud.firestore {
         || !exists(submissionPath(techniqueId)) || linkedDeletion(techniqueId));
     }
 
+    // Clients cannot promote themselves or create, edit, or remove Administrator roles.
+    // Administrator changes to Trainer access must include the matching application transition.
     match /user_roles/{uid} {
       allow get: if owner(uid);
       allow list: if admin() && resource.data.role == 'trainer';
@@ -135,6 +145,7 @@ service cloud.firestore {
           || (!exists(requestPath(uid)) && getAfter(requestPath(uid)).data.status == 'revoked'));
     }
 
+    // Applicants can submit, edit pending requests, and reapply. Administrators review them.
     match /trainer_requests/{uid} {
       allow get: if owner(uid) || admin();
       allow list: if admin();
@@ -160,6 +171,7 @@ service cloud.firestore {
             && hasRole(uid, 'trainer') && !existsAfter(rolePath(uid)))));
     }
 
+    // Trainers can submit videos and read their own submissions. Only administrators moderate them.
     match /technique_submissions/{id} {
       allow read: if admin() || (trainer() && resource.data.submitterUid == request.auth.uid);
       allow create: if trainer() && submissionId(id)
@@ -171,6 +183,7 @@ service cloud.firestore {
         && request.resource.data.status == 'pending' && validTechnique(request.resource.data);
       allow delete: if admin() && resource.data.status == 'rejected'
         && !exists(techniquePath(id));
+      // Archiving changes review metadata only. Publishing or removing a video requires a matching catalog write.
       allow update: if admin() && (
         (resource.data.status == 'approved' && !('archivedAt' in resource.data)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['archivedAt', 'archivedBy'])
