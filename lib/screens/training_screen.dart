@@ -163,33 +163,36 @@ class _TrainingScreenState extends State<TrainingScreen> {
                     onTap: () => context.push('/training/log', extra: s),
                   ),
                 const SectionHeader('Quick Add'),
-                Row(
-                  children: [
-                    QuickTile(
-                      Icons.sports_martial_arts,
-                      'Gi Class',
-                      AppColors.home,
-                      onTap: () => context.push('/training/log'),
-                    ),
-                    QuickTile(
-                      Icons.checkroom,
-                      'No-Gi Class',
-                      Colors.deepPurple,
-                      onTap: () => context.push('/training/log'),
-                    ),
-                    QuickTile(
-                      Icons.people_alt,
-                      'Open Mat',
-                      Colors.deepOrange,
-                      onTap: () => context.push('/training/log'),
-                    ),
-                    QuickTile(
-                      Icons.fitness_center,
-                      'Drilling / Technique',
-                      Colors.amber.shade800,
-                      onTap: () => context.push('/training/log'),
-                    ),
-                  ],
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      QuickTile(
+                        Icons.sports_martial_arts,
+                        'Gi Class',
+                        AppColors.home,
+                        onTap: () => context.push('/training/log'),
+                      ),
+                      QuickTile(
+                        Icons.checkroom,
+                        'No-Gi Class',
+                        Colors.deepPurple,
+                        onTap: () => context.push('/training/log'),
+                      ),
+                      QuickTile(
+                        Icons.people_alt,
+                        'Open Mat',
+                        Colors.deepOrange,
+                        onTap: () => context.push('/training/log'),
+                      ),
+                      QuickTile(
+                        Icons.fitness_center,
+                        'Drilling / Technique',
+                        Colors.amber.shade800,
+                        onTap: () => context.push('/training/log'),
+                      ),
+                    ],
+                  ),
                 ),
               ],
       );

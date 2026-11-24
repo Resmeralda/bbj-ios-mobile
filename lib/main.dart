@@ -1,9 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:go_router/go_router.dart';
 
-import 'firebase_options.dart';
+import 'app_firebase.dart';
+import 'data/role_store.dart';
 import 'data/stores.dart';
 import 'profile_store.dart';
 import 'router.dart';
@@ -13,23 +15,38 @@ import 'theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await AppFirebase.initialize();
 
-  // Bind each store to the signed-in user.
+  bindAuthStores(
+    FirebaseAuth.instance,
+    roles: roleStore,
+    bindPersonalData: (user) {
+      sessionStore.bind(user?.uid);
+      bindUserData(user?.uid);
+      profileStore.bind(user?.uid, authName: user?.displayName);
+    },
+  );
+
+  runApp(const BjjFitnessApp());
+}
+
+/// Binds the stores on startup and whenever the authenticated account changes.
+StreamSubscription<User?> bindAuthStores(
+  FirebaseAuth auth, {
+  required RoleStore roles,
+  required void Function(User? user) bindPersonalData,
+}) {
   String? lastUid;
   void syncStores(User? user) {
     if (user?.uid == lastUid) return;
 
     lastUid = user?.uid;
-    sessionStore.bind(user?.uid);
-    bindUserData(user?.uid);
-    profileStore.bind(user?.uid, authName: user?.displayName);
+    roles.bind(user?.uid);
+    bindPersonalData(user);
   }
 
-  syncStores(FirebaseAuth.instance.currentUser);
-  FirebaseAuth.instance.authStateChanges().listen(syncStores);
-
-  runApp(const BjjFitnessApp());
+  syncStores(auth.currentUser);
+  return auth.authStateChanges().listen(syncStores);
 }
 
 class BjjFitnessApp extends StatelessWidget {

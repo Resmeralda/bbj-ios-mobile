@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 
+import 'data/role_store.dart';
 import 'profile_store.dart';
 import 'shell.dart';
 import 'screens/home_screen.dart';
@@ -39,17 +40,19 @@ class GoRouterRefreshStream extends ChangeNotifier {
   }
 }
 
-final appRouter = createAppRouter(FirebaseAuth.instance);
+final appRouter = createAppRouter(FirebaseAuth.instance, roles: roleStore);
 
 GoRouter createAppRouter(
   FirebaseAuth auth, {
   ProfileStore? profiles,
+  RoleStore? roles,
 }) => GoRouter(
   initialLocation: '/home',
 
-  refreshListenable: GoRouterRefreshStream(
-    auth.authStateChanges(),
-  ),
+  refreshListenable: Listenable.merge([
+    GoRouterRefreshStream(auth.authStateChanges()),
+    roles,
+  ]),
 
   redirect: (context, state) {
     final user = auth.currentUser;
@@ -105,7 +108,11 @@ GoRouter createAppRouter(
               routes: [
                 GoRoute(
                   path: 'profile',
-                  builder: (_, _) => ProfileScreen(store: profiles),
+                  builder: (_, _) => ProfileScreen(
+                    store: profiles,
+                    roles: roles,
+                    auth: auth,
+                  ),
                   routes: [
                     GoRoute(
                       path: 'edit',
@@ -113,6 +120,11 @@ GoRouter createAppRouter(
                     ),
                     GoRoute(
                       path: 'admin',
+                      redirect: (_, _) =>
+                          roles?.verifiedRoleFor(auth.currentUser?.uid) ==
+                              UserRole.administrator
+                          ? null
+                          : '/home/profile',
                       builder: (_, _) => const AdminDashboardScreen(),
                     ),
                   ],
