@@ -38,6 +38,7 @@ CollectionStore<T> _boundStore<T>(
 Future<FakeFirebaseFirestore> _openRecovery(
   WidgetTester tester, {
   FakeFirebaseFirestore? database,
+  DateTime Function()? clock,
 }) async {
   final firestore = database ?? FakeFirebaseFirestore();
   final settings = RecoverySettingsStore(firestore: firestore);
@@ -45,6 +46,7 @@ Future<FakeFirebaseFirestore> _openRecovery(
   await settings.bind(_uid);
   final recovery = RecoveryScreen(
     settings: settings,
+    clock: clock,
     sleep: _boundStore(
       firestore,
       'sleep',
@@ -68,6 +70,22 @@ Future<FakeFirebaseFirestore> _openRecovery(
       (e) => e.toMap(),
       (e) => e.id,
       (e) => e.date,
+    ),
+    mobility: _boundStore(
+      firestore,
+      'mobility',
+      MobilityEntry.fromMap,
+      (e) => e.toMap(),
+      (e) => e.id,
+      (e) => e.date,
+    ),
+    habits: _boundStore(
+      firestore,
+      'recovery_habits',
+      RecoveryHabitDay.fromMap,
+      (e) => e.toMap(),
+      (e) => e.id,
+      (e) => DateTime.parse(e.id),
     ),
   );
   final router = GoRouter(
@@ -107,9 +125,14 @@ Future<void> _tap(WidgetTester tester, Finder finder) async {
 }
 
 Finder _tab(String label) => find.descendant(
-  of: find.byType(SingleChildScrollView),
-  matching: find.text(label),
+  of: find.byKey(const ValueKey('Recovery tabs')),
+  matching: find.widgetWithText(InkWell, label),
 );
+
+Finder _habit(String label) => find.widgetWithText(CheckboxListTile, label);
+
+bool? _checked(WidgetTester tester, String label) =>
+    tester.widget<CheckboxListTile>(_habit(label)).value;
 
 Finder _recentNotesLink() => find.descendant(
   of: find.widgetWithText(SectionHeader, 'Recent Notes'),
@@ -145,6 +168,313 @@ Future<void> _tallViewport(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('Overview shortcuts have equal bounds and aligned icons', (
+    tester,
+  ) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(600, 1100));
+    await _openRecovery(tester);
+    const labels = [
+      'Log Sleep',
+      'Log Wellness',
+      'Mobility / Stretching',
+      'Add Note',
+    ];
+    expect(
+      tester.getSize(find.text(labels[2])).height,
+      closeTo(2 * tester.getSize(find.text(labels.last)).height, 1),
+    );
+
+    for (final width in [600.0, 320.0]) {
+      await tester.binding.setSurfaceSize(Size(width, 1100));
+      await tester.pumpAndSettle();
+      final tiles = [
+        for (final label in labels) find.widgetWithText(QuickTile, label),
+      ];
+      final bounds = [
+        for (final tile in tiles)
+          tester.getRect(
+            find.descendant(of: tile, matching: find.byType(Material)),
+          ),
+      ];
+      final icons = [
+        for (final tile in tiles)
+          tester.getCenter(
+            find.descendant(of: tile, matching: find.byType(Icon)),
+          ),
+      ];
+      for (var i = 0; i < bounds.length; i++) {
+        expect(bounds[i].size, bounds.first.size);
+        expect(bounds[i].top, bounds.first.top);
+        expect(icons[i].dx, closeTo(bounds[i].center.dx, .01));
+        expect(icons[i].dy, icons.first.dy);
+        if (i > 0) {
+          expect(bounds[i].left - bounds[i - 1].right, closeTo(8, .01));
+        }
+      }
+      expect(tester.takeException(), isNull);
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+    'Mobility ignores invalid records and discards a stale account draft',
+    (tester) async {
+      await _tallViewport(tester);
+      final firestore = await _openRecovery(tester);
+      await firestore.doc('users/$_uid/mobility/invalid').set({
+        'date': DateTime.now().toIso8601String(),
+        'activity': 'unknown',
+        'minutes': -1,
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('0 of 5 completed'), findsOneWidget);
+      await _tap(tester, _tab('Mobility'));
+      expect(find.text('No mobility activities yet.'), findsOneWidget);
+      await _tap(tester, find.text('Log Mobility'));
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Duration (minutes)'),
+        '12',
+      );
+      final screen = tester.widget<RecoveryScreen>(
+        find.byType(RecoveryScreen, skipOffstage: false),
+      );
+      screen.mobility!.bind('other-athlete');
+      await tester.pumpAndSettle();
+      await _tap(tester, find.widgetWithText(FilledButton, 'Save'));
+      expect(find.text('Log mobility'), findsNothing);
+      expect(
+        (await firestore.collection('users/other-athlete/mobility').get()).docs,
+        isEmpty,
+      );
+      expect(
+        (await firestore.collection('users/$_uid/mobility').get())
+            .docs
+            .single
+            .id,
+        'invalid',
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'All five Recovery tabs share one scrollable row on a narrow screen',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 850));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _openRecovery(tester);
+      final rows = [
+        for (final label in [
+          'Overview',
+          'Sleep',
+          'Wellness',
+          'Notes',
+          'Mobility',
+        ])
+          tester.getTopLeft(_tab(label)).dy,
+      ];
+      expect(rows.toSet(), hasLength(1));
+      final strip = find.descendant(
+        of: find.byKey(const ValueKey('Recovery tabs')),
+        matching: find.byType(SingleChildScrollView),
+      );
+      expect(strip, findsOneWidget);
+      await tester.drag(strip, const Offset(-500, 0));
+      await tester.pumpAndSettle();
+      expect(_tab('Mobility').hitTestable(), findsOneWidget);
+      await _tap(tester, _tab('Mobility'));
+      expect(find.text('No mobility activities yet.'), findsOneWidget);
+      await _tap(tester, find.text('Log Mobility'));
+      expect(find.text('Log mobility'), findsOneWidget);
+      expect(find.text('Date'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'Overview logs mobility and the tab edits and deletes the same record',
+    (tester) async {
+      await _tallViewport(tester);
+      final firestore = await _openRecovery(tester);
+      final collection = firestore.collection('users/$_uid/mobility');
+      await _tap(tester, find.text('Mobility / Stretching'));
+      expect(find.text('Log mobility'), findsOneWidget);
+      await _tap(
+        tester,
+        find.byType(DropdownButtonFormField<MobilityActivity>),
+      );
+      for (final label in [
+        'Stretching',
+        'Mobility exercises',
+        'Foam rolling',
+        'Yoga',
+        'Other',
+      ]) {
+        expect(find.text(label), findsWidgets);
+      }
+      await _tap(tester, find.text('Foam rolling').last);
+      final minutes = find.widgetWithText(TextFormField, 'Duration (minutes)');
+      final save = find.widgetWithText(FilledButton, 'Save');
+      for (final invalid in ['0', '15.5']) {
+        await tester.enterText(minutes, invalid);
+        await _tap(tester, save);
+        expect(
+          find.text('Enter a positive whole number of minutes'),
+          findsOneWidget,
+        );
+        expect((await collection.get()).docs, isEmpty);
+      }
+      await tester.enterText(minutes, '15');
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Body area (optional)'),
+        ' Hips ',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Notes (optional)'),
+        ' Post-training ',
+      );
+      await _tap(tester, save);
+      expect(find.text('1 of 5 completed'), findsOneWidget);
+      final recorded = (await collection.get()).docs.single;
+      expect(recorded.data(), containsPair('minutes', 15));
+      expect(recorded.data(), containsPair('activity', 'foamRolling'));
+      expect(recorded.data(), containsPair('bodyArea', 'Hips'));
+      expect(recorded.data(), containsPair('notes', 'Post-training'));
+
+      await _tap(tester, _tab('Mobility'));
+      expect(find.text('Foam rolling • 15 min'), findsOneWidget);
+      expect(find.textContaining('Hips'), findsOneWidget);
+      expect(find.text('Post-training'), findsOneWidget);
+      await _tap(tester, find.text('Foam rolling • 15 min'));
+      expect(find.text('Edit mobility'), findsOneWidget);
+      expect(find.text('15'), findsOneWidget);
+      final now = DateTime.now();
+      final yesterday = DateTime(now.year, now.month, now.day - 1);
+      tester.widget<DateField>(find.byType(DateField)).onChanged(yesterday);
+      await tester.enterText(minutes, '20');
+      await _tap(tester, save);
+      expect(find.text('Foam rolling • 20 min'), findsOneWidget);
+      final edited = (await collection.get()).docs.single;
+      expect(edited.id, recorded.id);
+      expect(edited.data(), containsPair('date', yesterday.toIso8601String()));
+      await _tap(tester, _tab('Overview'));
+      expect(find.text('0 of 5 completed'), findsOneWidget);
+
+      await _tap(tester, _tab('Mobility'));
+      await _tap(tester, find.byIcon(Icons.delete_outline));
+      expect(find.text('Delete mobility activity?'), findsOneWidget);
+      await _tap(tester, find.text('Cancel'));
+      expect((await collection.get()).docs.single.id, recorded.id);
+      await _tap(tester, find.byIcon(Icons.delete_outline));
+      await _tap(tester, find.widgetWithText(TextButton, 'Delete'));
+      expect((await collection.get()).docs, isEmpty);
+      expect(find.text('No mobility activities yet.'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'Daily habits track records and wind-down across local midnight',
+    (tester) async {
+      await _tallViewport(tester);
+      var now = DateTime(2026, 11, 24, 23, 59, 59);
+      final firestore = await _openRecovery(tester, clock: () => now);
+      final user = firestore.collection('users').doc(_uid);
+      final date = now.toIso8601String();
+      final sleep = user.collection('sleep').doc('night');
+      final wellness = user.collection('wellness').doc('check-in');
+      final mobility = user.collection('mobility').doc('activity');
+      final note = user.collection('recovery_notes').doc('note');
+      final yesterday = user.collection('recovery_habits').doc('2026-11-24');
+      final tomorrow = user.collection('recovery_habits').doc('2026-11-25');
+      await _tap(tester, find.text('Recovery Habits'));
+      expect(find.text('Daily Recovery Habits'), findsOneWidget);
+      expect(find.text('2026-11-24'), findsOneWidget);
+      expect(
+        tester
+            .widgetList<CheckboxListTile>(find.byType(CheckboxListTile))
+            .where((tile) => tile.value == true),
+        isEmpty,
+      );
+
+      await sleep.set({'date': date, 'hours': 7});
+      await wellness.set({'date': date, 'energy': 4});
+      await mobility.set({'date': date, 'activity': 'yoga', 'minutes': 15});
+      await note.set({'date': date, 'title': 'After class'});
+      await tester.pumpAndSettle();
+      for (final label in [
+        'Log last night’s sleep',
+        'Log wellness',
+        'Log mobility',
+        'Add a recovery note',
+      ]) {
+        expect(_checked(tester, label), isTrue);
+        expect(
+          tester.widget<CheckboxListTile>(_habit(label)).onChanged,
+          isNull,
+        );
+      }
+      expect(find.text('4 of 5 completed'), findsOneWidget);
+      expect(
+        tester
+            .widgetList<ProgressBar>(find.byType(ProgressBar))
+            .map((bar) => bar.value),
+        contains(.8),
+      );
+      await _tap(tester, _habit('Wind-down'));
+      expect((await yesterday.get()).data(), {'windDown': true});
+      expect(find.text('5 of 5 completed'), findsOneWidget);
+      await _tap(tester, _habit('Wind-down'));
+      expect((await yesterday.get()).data(), {'windDown': false});
+      expect(_checked(tester, 'Wind-down'), isFalse);
+      await _tap(tester, _habit('Wind-down'));
+
+      await wellness.delete();
+      await note.update({'date': DateTime(2026, 11, 23).toIso8601String()});
+      await tester.pumpAndSettle();
+      expect(_checked(tester, 'Log wellness'), isFalse);
+      expect(_checked(tester, 'Add a recovery note'), isFalse);
+      expect(find.text('3 of 5 completed'), findsOneWidget);
+
+      now = DateTime(2026, 11, 25);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(find.text('2026-11-25'), findsOneWidget);
+      expect(find.text('0 of 5 completed'), findsOneWidget);
+      expect(_checked(tester, 'Wind-down'), isFalse);
+      expect((await yesterday.get()).data(), {'windDown': true});
+      expect((await tomorrow.get()).exists, isFalse);
+      await _tap(tester, _habit('Wind-down'));
+      expect((await tomorrow.get()).data(), {'windDown': true});
+      final screen = tester.widget<RecoveryScreen>(
+        find.byType(RecoveryScreen, skipOffstage: false),
+      );
+      screen.habits!.bind('another-athlete');
+      await tester.pumpAndSettle();
+      expect(_checked(tester, 'Wind-down'), isFalse);
+      expect(
+        (await firestore
+                .doc('users/another-athlete/recovery_habits/2026-11-25')
+                .get())
+            .exists,
+        isFalse,
+      );
+      screen.habits!.bind(_uid);
+      await tester.pumpAndSettle();
+      expect(_checked(tester, 'Wind-down'), isTrue);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      now = DateTime(2026, 11, 26, 9);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(find.text('2026-11-26'), findsOneWidget);
+      expect(_checked(tester, 'Wind-down'), isFalse);
+      expect((await tomorrow.get()).data(), {'windDown': true});
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
   testWidgets(
     'Recovery Details explains factors and rating bands on a narrow screen',
     (tester) async {
@@ -334,7 +664,7 @@ void main() {
     expect(find.text('No sleep logged for last night'), findsOneWidget);
     expect(find.text('Goal: 8 hr'), findsOneWidget);
     expect(find.text('No recovery notes yet.'), findsOneWidget);
-    expect(find.text('Checklist unavailable'), findsOneWidget);
+    expect(find.text('0 of 5 completed'), findsOneWidget);
     expect(find.text('Avg Sleep'), findsOneWidget);
     expect(find.text('Avg HRV'), findsOneWidget);
     expect(find.text('Mobility / Stretching'), findsOneWidget);
@@ -557,6 +887,7 @@ void main() {
       await _tap(tester, _tab('Wellness'));
       await _tap(tester, _tab('Overview'));
       expect(find.text('Loading sleep…'), findsOneWidget);
+      expect(find.text('Loading habits…'), findsOneWidget);
       expect(find.text('Loading recovery notes…'), findsOneWidget);
       await _tap(tester, find.text('View Details'));
       expect(find.text('Loading recovery measurements…'), findsOneWidget);
@@ -570,6 +901,18 @@ void main() {
       expect(find.text('Sleep records unavailable.'), findsOneWidget);
       expect(find.text('Note records unavailable.'), findsOneWidget);
       expect(find.text('No recovery notes yet.'), findsNothing);
+      expect(find.text('Habits sync issue'), findsOneWidget);
+      await _tap(tester, find.text('Recovery Habits'));
+      expect(find.text('Daily Recovery Habits'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(BottomSheet),
+          matching: find.text('Sleep records unavailable.'),
+        ),
+        findsOneWidget,
+      );
+      Navigator.of(tester.element(find.byType(BottomSheet))).pop();
+      await tester.pumpAndSettle();
       await _tap(tester, find.text('View Details'));
       expect(find.text('Sleep records unavailable.'), findsOneWidget);
       expect(find.text('Could not load recovery settings.'), findsOneWidget);

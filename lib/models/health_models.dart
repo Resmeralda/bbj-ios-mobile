@@ -263,3 +263,79 @@ class RecoveryNote {
     'body': body,
   };
 }
+
+enum MobilityActivity {
+  stretching('Stretching'),
+  mobilityExercises('Mobility exercises'),
+  foamRolling('Foam rolling'),
+  yoga('Yoga'),
+  other('Other');
+
+  const MobilityActivity(this.label);
+  final String label;
+}
+
+/// users/{uid}/mobility/{id}
+class MobilityEntry {
+  const MobilityEntry({
+    required this.id,
+    required this.date,
+    required this.activity,
+    required this.minutes,
+    this.bodyArea = '',
+    this.notes = '',
+  });
+
+  final String id;
+  final DateTime date;
+  final MobilityActivity activity;
+  final int minutes;
+  final String bodyArea;
+  final String notes;
+
+  static bool validMinutes(int? minutes) => minutes != null && minutes > 0;
+
+  factory MobilityEntry.fromMap(String id, Map<String, dynamic> data) {
+    final minutes = data['minutes'];
+    final activity = MobilityActivity.values
+        .where((activity) => activity.name == data['activity'])
+        .firstOrNull;
+    if (minutes is! int || !validMinutes(minutes) || activity == null) {
+      throw const FormatException('Invalid mobility activity or duration.');
+    }
+    return MobilityEntry(
+      id: id,
+      date: _recoveryDate(data['date']),
+      activity: activity,
+      minutes: minutes,
+      bodyArea: _str(data['bodyArea']),
+      notes: _str(data['notes']),
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'date': date.toIso8601String(),
+    'activity': activity.name,
+    'minutes': minutes,
+    if (bodyArea.isNotEmpty) 'bodyArea': bodyArea,
+    if (notes.isNotEmpty) 'notes': notes,
+  };
+}
+
+/// users/{uid}/recovery_habits/{localDate}
+class RecoveryHabitDay {
+  const RecoveryHabitDay({required this.id, required this.windDown});
+
+  final String id;
+  final bool windDown;
+
+  static String idFor(DateTime day) =>
+      '${day.year.toString().padLeft(4, '0')}-'
+      '${day.month.toString().padLeft(2, '0')}-'
+      '${day.day.toString().padLeft(2, '0')}';
+
+  factory RecoveryHabitDay.fromMap(String id, Map<String, dynamic> data) =>
+      RecoveryHabitDay(id: id, windDown: data['windDown'] == true);
+
+  Map<String, dynamic> toMap() => {'windDown': windDown};
+}

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -10,6 +12,8 @@ import '../models/training_session.dart' show formatDate;
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/form_helpers.dart';
+import 'recovery_habits_card.dart';
+import 'recovery_mobility_tab.dart';
 import 'recovery_score_widgets.dart';
 import 'recovery_tabs.dart';
 
@@ -19,45 +23,97 @@ class RecoveryScreen extends StatefulWidget {
     this.sleep,
     this.wellness,
     this.notes,
+    this.mobility,
+    this.habits,
     this.settings,
+    this.clock,
   });
 
   final CollectionStore<SleepEntry>? sleep;
   final CollectionStore<WellnessEntry>? wellness;
   final CollectionStore<RecoveryNote>? notes;
+  final CollectionStore<MobilityEntry>? mobility;
+  final CollectionStore<RecoveryHabitDay>? habits;
   final RecoverySettingsStore? settings;
+  final DateTime Function()? clock;
 
   @override
   State<RecoveryScreen> createState() => _RecoveryScreenState();
 }
 
-class _RecoveryScreenState extends State<RecoveryScreen> {
+class _RecoveryScreenState extends State<RecoveryScreen>
+    with WidgetsBindingObserver {
   int tab = 0;
+  late final ValueNotifier<DateTime> _day;
+  Timer? _midnight;
+
+  DateTime _now() => (widget.clock?.call() ?? DateTime.now()).toLocal();
+
+  @override
+  void initState() {
+    super.initState();
+    _day = ValueNotifier(DateUtils.dateOnly(_now()));
+    WidgetsBinding.instance.addObserver(this);
+    _updateDay();
+  }
+
+  void _updateDay() {
+    _midnight?.cancel();
+    final now = _now();
+    _day.value = DateUtils.dateOnly(now);
+    final nextDay = DateTime(now.year, now.month, now.day + 1);
+    _midnight = Timer(nextDay.difference(now), _updateDay);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _updateDay();
+  }
+
+  @override
+  void dispose() {
+    _midnight?.cancel();
+    _day.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final sleep = widget.sleep ?? sleepStore;
     final wellness = widget.wellness ?? wellnessStore;
     final notes = widget.notes ?? noteStore;
+    final mobility = widget.mobility ?? mobilityStore;
+    final habits = widget.habits ?? recoveryHabitStore;
     final settings = widget.settings ?? recoverySettingsStore;
     return ListenableBuilder(
       listenable: Listenable.merge([
         settings,
-        if (tab == 0) ...[sleep, wellness, notes],
+        if (tab == 0) ...[sleep, wellness, notes, _day],
       ]),
       builder: (context, _) => ScreenScaffold(
         title: 'Recovery',
         color: AppColors.recovery,
         actionIcon: Icons.settings,
         onAction: () => context.push('/recovery/settings'),
-        tabs: const ['Overview', 'Sleep', 'Wellness', 'Notes'],
+        tabs: const ['Overview', 'Sleep', 'Wellness', 'Notes', 'Mobility'],
+        responsiveTabs: true,
         tab: tab,
         onTab: (i) => setState(() => tab = i),
         children: switch (tab) {
           1 => [RecoverySleepTab(store: sleep, settings: settings.settings)],
           2 => [RecoveryWellnessTab(store: wellness)],
           3 => [RecoveryNotesTab(store: notes)],
-          _ => _overview(context, sleep, wellness, notes, settings),
+          4 => [RecoveryMobilityTab(store: mobility)],
+          _ => _overview(
+            context,
+            sleep,
+            wellness,
+            notes,
+            mobility,
+            habits,
+            settings,
+          ),
         },
       ),
     );
@@ -68,6 +124,8 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
     CollectionStore<SleepEntry> sleep,
     CollectionStore<WellnessEntry> wellness,
     CollectionStore<RecoveryNote> notes,
+    CollectionStore<MobilityEntry> mobility,
+    CollectionStore<RecoveryHabitDay> habits,
     RecoverySettingsStore settingsStore,
   ) {
     final assessment = readRecoveryAssessment(sleep, wellness, settingsStore);
@@ -186,55 +244,45 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
           ],
         ),
       ),
-      Row(
-        children: [
-          QuickTile(
-            Icons.bed,
-            'Log Sleep',
-            AppColors.recovery,
-            onTap: () => showLogSleepForm(context, sleep),
-          ),
-          QuickTile(
-            Icons.favorite,
-            'Log Wellness',
-            Colors.red,
-            onTap: () => showLogWellnessForm(context, wellness),
-          ),
-          const QuickTile(
-            Icons.self_improvement,
-            'Mobility / Stretching',
-            Colors.blue,
-          ),
-          QuickTile(
-            Icons.note_add,
-            'Add Note',
-            Colors.amber.shade800,
-            onTap: () => showAddRecoveryNoteForm(context, notes),
-          ),
-        ],
-      ),
-      const SizedBox(height: 12),
-      const AppCard(
+      IntrinsicHeight(
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Icon(Icons.checklist, color: AppColors.recovery, size: 32),
-            SizedBox(width: 12),
-            Text(
-              'Recovery Habits',
-              style: TextStyle(fontWeight: FontWeight.bold),
+            QuickTile(
+              Icons.bed,
+              'Log Sleep',
+              AppColors.recovery,
+              onTap: () => showLogSleepForm(context, sleep),
             ),
-            SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text('Checklist unavailable', style: TextStyle(fontSize: 12)),
-                  ProgressBar(0, Colors.grey),
-                ],
-              ),
+            QuickTile(
+              Icons.favorite,
+              'Log Wellness',
+              Colors.red,
+              onTap: () => showLogWellnessForm(context, wellness),
+            ),
+            QuickTile(
+              Icons.self_improvement,
+              'Mobility / Stretching',
+              Colors.blue,
+              onTap: () => showMobilityForm(context, mobility),
+            ),
+            QuickTile(
+              Icons.note_add,
+              'Add Note',
+              Colors.amber.shade800,
+              onTap: () => showAddRecoveryNoteForm(context, notes),
             ),
           ],
         ),
+      ),
+      const SizedBox(height: 12),
+      RecoveryHabitsCard(
+        day: _day,
+        sleep: sleep,
+        wellness: wellness,
+        mobility: mobility,
+        notes: notes,
+        habits: habits,
       ),
       const SectionHeader('This Week', action: 'View All'),
       Row(

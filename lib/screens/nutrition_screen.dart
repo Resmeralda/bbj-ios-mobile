@@ -74,6 +74,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
     color: AppColors.nutrition,
     actionIcon: Icons.settings,
     tabs: const ['Log', 'Progress', 'Goals', 'Recipes'],
+    responsiveTabs: true,
     tab: tab,
     onTab: (i) => setState(() => tab = i),
     children: tab == 1

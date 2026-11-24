@@ -57,6 +57,22 @@ final noteStore = CollectionStore<RecoveryNote>(
   compare: (a, b) => _newestFirst(a.date, b.date),
 );
 
+final mobilityStore = CollectionStore<MobilityEntry>(
+  path: 'mobility',
+  fromMap: MobilityEntry.fromMap,
+  toMap: (e) => e.toMap(),
+  idOf: (e) => e.id,
+  compare: (a, b) => _newestFirst(a.date, b.date),
+);
+
+final recoveryHabitStore = CollectionStore<RecoveryHabitDay>(
+  path: 'recovery_habits',
+  fromMap: RecoveryHabitDay.fromMap,
+  toMap: (day) => day.toMap(),
+  idOf: (day) => day.id,
+  compare: (a, b) => b.id.compareTo(a.id),
+);
+
 /// Nutrition goals: one document at users/{uid}/settings/nutrition.
 class NutritionGoalsStore extends ChangeNotifier {
   NutritionGoalsStore({FirebaseFirestore? firestore})
@@ -119,6 +135,8 @@ void bindUserData(String? uid) {
   sleepStore.bind(uid);
   wellnessStore.bind(uid);
   noteStore.bind(uid);
+  mobilityStore.bind(uid);
+  recoveryHabitStore.bind(uid);
   goalsStore.bind(uid);
   unawaited(recoverySettingsStore.bind(uid));
 }
