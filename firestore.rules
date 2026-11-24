@@ -2,18 +2,196 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function owner(uid) { return signedIn() && request.auth.uid == uid; }
+    function rolePath(uid) {
+      return /databases/$(database)/documents/user_roles/$(uid);
+    }
+    function requestPath(uid) {
+      return /databases/$(database)/documents/trainer_requests/$(uid);
+    }
+    function submissionPath(id) {
+      return /databases/$(database)/documents/technique_submissions/$(id);
+    }
+    function techniquePath(id) {
+      return /databases/$(database)/documents/techniques/$(id);
+    }
+    function hasRole(uid, role) {
+      return exists(rolePath(uid)) && get(rolePath(uid)).data.role == role;
+    }
+    function admin() { return signedIn() && hasRole(request.auth.uid, 'admin'); }
+    function trainer() { return signedIn() && hasRole(request.auth.uid, 'trainer'); }
+    function text(value, limit) {
+      return value is string && value.size() <= limit && value.matches('(?s).*[^\\s].*');
+    }
+    function fields(data, names) {
+      return data.keys().hasAll(names) && data.keys().hasOnly(names);
+    }
+    function reviewed(data, previous, extra) {
+      return data.diff(previous).affectedKeys().hasOnly(['status', 'reviewerUid', 'reviewedAt'].concat(extra))
+        && data.reviewerUid == request.auth.uid && data.reviewedAt == request.time;
+    }
+    function identity(data) {
+      return (!('accountName' in data)
+          || (text(data.accountName, 120) && data.accountName == request.auth.token.get('name', null)))
+        && (!('accountEmail' in data)
+          || (text(data.accountEmail, 320) && data.accountEmail == request.auth.token.get('email', null)));
+    }
+    function applicationFields() {
+      return ['academy', 'position', 'belt', 'contact', 'reason'];
+    }
+    function validApplication(data) {
+      return text(data.academy, 120)
+        && data.position in ['Instructor/Coach', 'Academy Owner', 'Dojo Staff']
+        && data.belt in ['', 'White', 'Blue', 'Purple', 'Brown', 'Black']
+        && text(data.contact, 300) && text(data.reason, 2000);
+    }
+    function application(data, uid) {
+      let required = applicationFields().concat(['applicantUid', 'requestedAt', 'status']);
+      return data.keys().hasAll(required)
+        && data.keys().hasOnly(required.concat(['accountName', 'accountEmail']))
+        && identity(data) && validApplication(data)
+        && data.applicantUid == uid && data.requestedAt == request.time && data.status == 'pending';
+    }
+    function pendingEdit(data, previous, uid) {
+      return previous.status == 'pending' && previous.applicantUid == uid
+        && data.diff(previous).affectedKeys().hasOnly(applicationFields().concat(['updatedAt']))
+        && data.updatedAt == request.time && validApplication(data);
+    }
+    function reviewReason(data) {
+      return !('reviewReason' in data) ||
+        (data.status in ['rejected', 'revoked'] && text(data.reviewReason, 1000));
+    }
+    function externalIdentity(data, role) {
+      return data.get('accountName', null) == role.get('accountName', null)
+        && data.get('accountEmail', null) == role.get('accountEmail', null);
+    }
+    function techniqueFields() {
+      return ['name', 'category', 'description', 'difficulty', 'instructor', 'videoUrl'];
+    }
+    function validTechnique(data) {
+      return text(data.name, 120) && text(data.description, 3000)
+        && text(data.instructor, 120)
+        && data.category in ['Takedowns', 'Submissions', 'Guard', 'Escapes']
+        && data.difficulty in ['Beginner', 'Intermediate', 'Advanced']
+        && text(data.videoUrl, 500)
+        && data.videoUrl.matches('https?://((www[.]|m[.])?youtube[.]com/(watch[?]([^# ]*&)?v=|(embed|shorts|live)/)|youtu[.]be/)[A-Za-z0-9_-]{11}([?&#][^\\s]*)?');
+    }
+    function submissionId(id) { return id.matches('submission_[A-Za-z0-9]{20}'); }
+    function sameTechnique(a, b) {
+      return a.name == b.name && a.category == b.category && a.description == b.description
+        && a.difficulty == b.difficulty && a.instructor == b.instructor && a.videoUrl == b.videoUrl;
+    }
+    function publicationChange(data, previous, state) {
+      return previous.status == 'approved'
+        && data.diff(previous).affectedKeys().hasOnly(['publicationState', 'publicationChangedAt', 'publicationChangedBy'])
+        && data.publicationState == state
+        && data.publicationChangedAt == request.time
+        && data.publicationChangedBy == request.auth.uid;
+    }
+    function linkedCreation(id) {
+      let before = get(submissionPath(id)).data;
+      let after = getAfter(submissionPath(id)).data;
+      return after.status == 'approved' && after.publicationState == 'published'
+        && sameTechnique(request.resource.data, after)
+        && (before.status == 'pending'
+          || (before.status == 'approved' && !('archivedAt' in before)
+            && publicationChange(after, before, 'published')));
+    }
+    function linkedDeletion(id) {
+      let before = get(submissionPath(id)).data;
+      return before.status != 'approved'
+        || publicationChange(getAfter(submissionPath(id)).data, before, 'removed');
+    }
+    function requestTransition(uid, from, to) {
+      return get(requestPath(uid)).data.status == from
+        && getAfter(requestPath(uid)).data.status == to;
+    }
+
     match /users/{uid}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
 
     match /techniques/{techniqueId} {
-      allow read: if request.auth != null;
-      allow write: if false;
+      allow read: if signedIn();
+      allow create: if admin() && fields(request.resource.data, techniqueFields())
+        && validTechnique(request.resource.data)
+        && (!submissionId(techniqueId) || linkedCreation(techniqueId));
+      allow update: if admin() && fields(request.resource.data, techniqueFields())
+        && validTechnique(request.resource.data);
+      allow delete: if admin() && (!submissionId(techniqueId)
+        || !exists(submissionPath(techniqueId)) || linkedDeletion(techniqueId));
     }
 
     match /user_roles/{uid} {
-      allow get: if request.auth != null && request.auth.uid == uid;
-      allow list, write: if false;
+      allow get: if owner(uid);
+      allow list: if admin() && resource.data.role == 'trainer';
+      allow create: if admin() && fields(request.resource.data, ['role'])
+        && request.resource.data.role == 'trainer'
+        && (requestTransition(uid, 'pending', 'approved')
+          || requestTransition(uid, 'revoked', 'approved'));
+      allow delete: if admin() && resource.data.role == 'trainer'
+        && (requestTransition(uid, 'approved', 'revoked')
+          || (!exists(requestPath(uid)) && getAfter(requestPath(uid)).data.status == 'revoked'));
+    }
+
+    match /trainer_requests/{uid} {
+      allow get: if owner(uid) || admin();
+      allow list: if admin();
+      allow delete: if admin() && resource.data.status in ['rejected', 'revoked']
+        && !exists(rolePath(uid)) && !existsAfter(rolePath(uid));
+      allow create: if (owner(uid) && !exists(rolePath(uid)) && application(request.resource.data, uid))
+        || (admin() && hasRole(uid, 'trainer') && !existsAfter(rolePath(uid))
+          && request.resource.data.keys().hasOnly(['applicantUid', 'status', 'reviewerUid', 'reviewedAt',
+            'reviewReason', 'accountName', 'accountEmail'])
+          && externalIdentity(request.resource.data, get(rolePath(uid)).data)
+          && request.resource.data.applicantUid == uid && request.resource.data.status == 'revoked'
+          && request.resource.data.reviewerUid == request.auth.uid && request.resource.data.reviewedAt == request.time
+          && reviewReason(request.resource.data));
+      allow update: if (owner(uid) && !exists(rolePath(uid))
+          && (pendingEdit(request.resource.data, resource.data, uid)
+            || (resource.data.status in ['rejected', 'revoked'] && application(request.resource.data, uid))))
+        || (admin() && reviewed(request.resource.data, resource.data, ['reviewReason'])
+          && reviewReason(request.resource.data) && (
+          (resource.data.status in ['pending', 'revoked'] && !exists(rolePath(uid)) && (
+            (request.resource.data.status == 'approved' && getAfter(rolePath(uid)).data.role == 'trainer')
+            || (resource.data.status == 'pending' && request.resource.data.status == 'rejected' && !existsAfter(rolePath(uid)))))
+          || (resource.data.status == 'approved' && request.resource.data.status == 'revoked'
+            && hasRole(uid, 'trainer') && !existsAfter(rolePath(uid)))));
+    }
+
+    match /technique_submissions/{id} {
+      allow read: if admin() || (trainer() && resource.data.submitterUid == request.auth.uid);
+      allow create: if trainer() && submissionId(id)
+        && request.resource.data.keys().hasAll(techniqueFields().concat(['submitterUid', 'submittedAt', 'status']))
+        && request.resource.data.keys().hasOnly(techniqueFields().concat(['submitterUid', 'submittedAt', 'status', 'accountName', 'accountEmail']))
+        && identity(request.resource.data)
+        && request.resource.data.submitterUid == request.auth.uid
+        && request.resource.data.submittedAt == request.time
+        && request.resource.data.status == 'pending' && validTechnique(request.resource.data);
+      allow delete: if admin() && resource.data.status == 'rejected'
+        && !exists(techniquePath(id));
+      allow update: if admin() && (
+        (resource.data.status == 'approved' && !('archivedAt' in resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['archivedAt', 'archivedBy'])
+          && request.resource.data.archivedAt == request.time
+          && request.resource.data.archivedBy == request.auth.uid)
+        || (submissionId(id) && publicationChange(request.resource.data, resource.data, 'removed')
+          && exists(techniquePath(id)) && !existsAfter(techniquePath(id)))
+        || (submissionId(id) && !('archivedAt' in resource.data)
+          && publicationChange(request.resource.data, resource.data, 'published')
+          && !exists(techniquePath(id))
+          && sameTechnique(request.resource.data, getAfter(techniquePath(id)).data))
+        || (reviewed(request.resource.data, resource.data, ['publicationState'])
+        && ((resource.data.status == 'rejected' && request.resource.data.status == 'pending'
+            && !('publicationState' in request.resource.data)
+            && !exists(techniquePath(id)))
+          || (resource.data.status == 'pending' && ((request.resource.data.status == 'rejected'
+            && !('publicationState' in request.resource.data))
+          || (request.resource.data.status == 'approved' && submissionId(id)
+            && request.resource.data.publicationState == 'published'
+            && !exists(techniquePath(id))
+            && sameTechnique(request.resource.data, getAfter(techniquePath(id)).data)))))));
     }
   }
 }

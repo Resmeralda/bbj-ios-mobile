@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bjj_app/data/role_store.dart';
+import 'package:bjj_app/data/review_store.dart';
 import 'package:bjj_app/main.dart';
 import 'package:bjj_app/profile_store.dart';
 import 'package:bjj_app/router.dart';
@@ -26,14 +27,24 @@ Future<GoRouter> _open(
     mockUser: MockUser(uid: 'athlete', displayName: 'Athlete'),
   );
   final roles = RoleStore.withWatch((_) => snapshots);
-  final profiles = ProfileStore(firestore: FakeFirebaseFirestore());
+  final firestore = FakeFirebaseFirestore();
+  final profiles = ProfileStore(firestore: firestore);
   final subscription = bindAuthStores(
     auth,
     roles: roles,
     bindPersonalData: (user) =>
         profiles.bind(user?.uid, authName: user?.displayName),
   );
-  final router = createAppRouter(auth, roles: roles, profiles: profiles);
+  final router = createAppRouter(
+    auth,
+    roles: roles,
+    profiles: profiles,
+    reviews: ReviewStore(
+      roles: roles,
+      currentUid: () => auth.currentUser?.uid,
+      firestore: firestore,
+    ),
+  );
   addTearDown(roles.dispose);
   addTearDown(profiles.dispose);
   addTearDown(subscription.cancel);

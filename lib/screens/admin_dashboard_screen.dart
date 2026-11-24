@@ -1,538 +1,958 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart' show FirebaseException;
 import 'package:flutter/material.dart';
+import 'package:youtube_player_iframe/youtube_player_iframe.dart';
+
+import '../data/review_store.dart';
+import '../data/role_store.dart';
+import '../models/technique.dart';
+import '../theme.dart';
+import '../widgets/common.dart';
+import '../widgets/form_helpers.dart';
+import 'review_forms.dart';
+
+const _adminColor = Color(0xFF588564);
 
 class AdminDashboardScreen extends StatefulWidget {
-  const AdminDashboardScreen({super.key});
+  const AdminDashboardScreen({super.key, required this.store});
+
+  final ReviewStore store;
 
   @override
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
 }
 
-class _VideoSubmission {
-  final String title;
-  final String instructor;
-  final String category;
-  final String description;
-  final String youtubeUrl;
-  String status;
+class _AdminDashboardScreenState extends State<AdminDashboardScreen>
+    with SingleTickerProviderStateMixin {
+  late final _store = widget.store;
+  late final ReviewAccess _access;
+  late final _tabsController = TabController(length: 3, vsync: this);
+  late final _applications = _DashboardQuery(
+    _store.watchApplications,
+    _queryChanged,
+  );
+  late final _trainerRoles = _DashboardQuery(
+    _store.watchTrainerRoles,
+    _queryChanged,
+  );
+  late final _submissions = _DashboardQuery(
+    _store.watchModeration,
+    _queryChanged,
+  );
+  late final _techniques = _DashboardQuery(
+    _store.watchTechniques,
+    _queryChanged,
+  );
+  final _visitedQueries = <_DashboardQuery<Object>>{};
+  bool _visible = false;
+  bool _accessEnded = false;
+  SubmissionFilter? _filter;
+  bool _busy = false;
 
-  _VideoSubmission({
-    required this.title,
-    required this.instructor,
-    required this.category,
-    this.description = '',
-    this.youtubeUrl = '',
-    this.status = 'Pending',
-  });
-}
+  bool get _canView =>
+      !_accessEnded &&
+      _store.currentUid() == _access.uid &&
+      _store.roles.access == _access.token &&
+      _store.roles.verifiedRoleFor(_access.uid) == UserRole.administrator;
 
-class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
-  final Color adminColor = const Color(0xFF588564);
+  @override
+  void initState() {
+    super.initState();
+    // Keep actions bound to the authorization that opened this dashboard.
+    _access = _store.capture(UserRole.administrator);
+    _store.roles.addListener(_authorizationChanged);
+    _tabsController.addListener(_startTabQueries);
+  }
 
-  String selectedFilter = 'All';
-
-  List<_VideoSubmission> get filteredSubmissions {
-    if (selectedFilter == 'All') {
-      return submissions;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final visible = TickerMode.valuesOf(context).enabled;
+    if (_visible == visible) return;
+    _visible = visible;
+    if (visible && _canView) {
+      _startTabQueries();
+      for (final query in _visitedQueries) {
+        query.start();
+      }
+    } else {
+      _stopQueries();
     }
-
-    return submissions
-        .where((video) => video.status == selectedFilter)
-        .toList();
   }
 
-  final List<_VideoSubmission> submissions = [
-    _VideoSubmission(
-      title: 'Armbar from Guard',
-      instructor: 'Instructor Maria',
-      category: 'Submissions',
-    ),
-    _VideoSubmission(
-      title: 'Double Leg Takedown',
-      instructor: 'Instructor Nick',
-      category: 'Takedowns',
-    ),
-    _VideoSubmission(
-      title: 'Mount Escape',
-      instructor: 'Instructor Alex',
-      category: 'Escapes',
-      status: 'Approved',
-    ),
-  ];
-
-  int countStatus(String status) =>
-      submissions.where((video) => video.status == status).length;
-
-  void updateStatus(_VideoSubmission video, String status) {
-    setState(() {
-      video.status = status;
-    });
-
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('${video.title} marked as $status')));
+  void _startTabQueries() {
+    if (!_visible || !_canView) return;
+    final queries = switch (_tabsController.index) {
+      0 => [_applications, _trainerRoles],
+      1 => [_submissions, _techniques],
+      _ => [_techniques],
+    };
+    for (final query in queries) {
+      _visitedQueries.add(query);
+      query.start();
+    }
   }
 
-  void _showSubmissionForm() {
-    showModalBottomSheet<void>(
+  void _stopQueries({bool clear = false}) {
+    for (final query in _visitedQueries) {
+      query.stop(clear: clear);
+    }
+  }
+
+  void _authorizationChanged() {
+    if (_canView || _accessEnded) return;
+    _accessEnded = true;
+    _stopQueries(clear: true);
+    setState(() {});
+  }
+
+  void _queryChanged() {
+    if (!mounted) return;
+    if (!_canView) {
+      _authorizationChanged();
+      return;
+    }
+    setState(() {});
+  }
+
+  void _retry(_DashboardQuery<Object> query) {
+    if (!_canView || !_visible) return;
+    setState(query.retry);
+  }
+
+  @override
+  void dispose() {
+    _store.roles.removeListener(_authorizationChanged);
+    _tabsController.dispose();
+    _stopQueries(clear: true);
+    super.dispose();
+  }
+
+  Future<void> _perform(Future<void> Function() action) async {
+    if (_busy || !_canView) return;
+    setState(() => _busy = true);
+    try {
+      await action();
+      if (!mounted || !_canView) return;
+      _notify('Changes saved.');
+    } catch (error) {
+      if (!mounted || !_canView) return;
+      _notify(
+        error is StateError
+            ? error.message
+            : 'Could not save changes. Try again.',
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _notify(String message) =>
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+
+  Future<String?> _confirm({
+    required String title,
+    required String description,
+    required String action,
+    bool withReason = false,
+  }) {
+    var reason = '';
+    return showDialog<String>(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.white,
-      builder: (sheetContext) => _VideoSubmissionForm(
-        adminColor: adminColor,
-        onSubmit: (video) {
-          setState(() {
-            submissions.insert(0, video);
-          });
-
-          Navigator.of(sheetContext).pop();
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${video.title} submitted for review')),
-          );
-        },
+      useRootNavigator: false,
+      builder: (context) => _guardOverlay(
+        AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(description),
+              if (withReason)
+                TextField(
+                  decoration: const InputDecoration(
+                    labelText: 'Reason (optional)',
+                  ),
+                  maxLength: 1000,
+                  maxLines: 2,
+                  onChanged: (value) => reason = value,
+                ),
+            ],
+          ),
+          scrollable: true,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, reason),
+              child: Text(action),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F6FB),
-      appBar: AppBar(
-        title: const Text('Admin Dashboard'),
-        backgroundColor: adminColor,
-        foregroundColor: Colors.white,
+  Widget _guardOverlay(Widget child) => ListenableBuilder(
+    listenable: _store.roles,
+    child: child,
+    builder: (_, child) => _canView ? child! : const SizedBox.shrink(),
+  );
+
+  Future<void> _decideApplication(
+    TrainerApplication application,
+    ReviewStatus decision,
+  ) async {
+    final String? reason;
+    if (decision == ReviewStatus.approved &&
+        application.status == ReviewStatus.pending) {
+      reason = '';
+    } else {
+      final (title, description, action) = switch (decision) {
+        ReviewStatus.revoked => (
+          'Revoke Trainer access?',
+          'This account will lose Trainer access.',
+          'Revoke',
+        ),
+        ReviewStatus.approved => (
+          'Reinstate Trainer access?',
+          'This account will regain Trainer access.',
+          'Reinstate',
+        ),
+        _ => (
+          'Reject trainer application?',
+          'The applicant can view your decision and reapply.',
+          'Reject',
+        ),
+      };
+      reason = await _confirm(
+        title: title,
+        description: description,
+        action: action,
+        withReason: decision != ReviewStatus.approved,
+      );
+    }
+    if (reason == null || !mounted) return;
+    await _perform(
+      () => _store.reviewApplication(
+        _access,
+        application.uid,
+        decision,
+        reason: reason,
+        external: application.external ? application : null,
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const Text(
-            'Content Management',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Review and manage submitted BJJ technique videos.',
-            style: TextStyle(color: Colors.black54),
-          ),
-          const SizedBox(height: 20),
+    );
+  }
 
-          Row(
-            children: [
-              _summaryCard('Pending', countStatus('Pending'), Colors.orange),
-              const SizedBox(width: 8),
-              _summaryCard('Approved', countStatus('Approved'), Colors.green),
-              const SizedBox(width: 8),
-              _summaryCard('Rejected', countStatus('Rejected'), Colors.red),
-            ],
-          ),
+  Future<void> _manage({
+    required String title,
+    required String description,
+    required String action,
+    required Future<void> Function() save,
+  }) async {
+    final confirmed = await _confirm(
+      title: title,
+      description: description,
+      action: action,
+    );
+    if (confirmed == null || !mounted) return;
+    await _perform(save);
+  }
 
-          const SizedBox(height: 24),
+  Future<void> _reopen(TechniqueSubmission submission) => _manage(
+    title: 'Reopen submission?',
+    description: '${submission.technique.name} will return to Pending.',
+    action: 'Reopen',
+    save: () => _store.moderate(_access, submission.id, ReviewStatus.pending),
+  );
 
-          FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: adminColor,
-              padding: const EdgeInsets.all(16),
-            ),
-            onPressed: _showSubmissionForm,
-            icon: const Icon(Icons.add),
-            label: const Text('Submit Video'),
-          ),
+  void _edit([Technique? existing]) => showTechniqueForm(
+    context,
+    title: existing == null
+        ? 'Add Published Technique'
+        : 'Edit Published Technique',
+    submitLabel: 'Save technique',
+    id: existing?.id ?? _store.newTechniqueId(),
+    existing: existing,
+    color: _adminColor,
+    guard: _guardOverlay,
+    save: (technique) =>
+        _store.saveTechnique(_access, technique, editing: existing != null),
+  );
 
-          const SizedBox(height: 24),
+  Future<void> _remove(Technique technique) async {
+    await _manage(
+      title: 'Remove ${technique.name}?',
+      description: 'This removes the technique from the library. A linked review record will show Removed from Library.',
+      action: 'Delete',
+      save: () => _store.removeTechnique(_access, technique.id),
+    );
+  }
 
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Video Submissions',
-                style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
+  Widget _trainerRequests() => _DashboardFeed(
+    query: _applications,
+    title: 'trainer requests',
+    loadFailure: 'Could not load trainer requests.',
+    retry: () => _retry(_applications),
+    content: (applications) {
+      final pending = applications
+          .where((item) => item.status == ReviewStatus.pending)
+          .toList();
+      final reviewed = applications.where(
+        (item) =>
+            item.status != ReviewStatus.pending &&
+            item.status != ReviewStatus.approved,
+      );
+      final known = applications.map((item) => item.uid).toSet();
+      final approved = [
+        ...applications.where((item) => item.status == ReviewStatus.approved),
+        ...(_trainerRoles.rows ?? const []).where(
+          (item) => !known.contains(item.uid),
+        ),
+      ];
+      return [
+        _CountStrip({
+          'Pending': pending.length,
+          'Approved trainers': approved.length,
+          'Reviewed': applications.length - pending.length,
+        }),
+        const SectionHeader('Pending requests'),
+        if (pending.isEmpty) const EmptyState('No pending trainer requests.'),
+        for (final application in pending) _applicationCard(application),
+        const SectionHeader('Approved trainers'),
+        _FeedNotice(
+          query: _trainerRoles,
+          title: 'directly provisioned trainers',
+          loadFailure: 'Could not load directly provisioned trainers.',
+          retry: () => _retry(_trainerRoles),
+        ),
+        if (approved.isEmpty &&
+            _trainerRoles.rows != null &&
+            !_trainerRoles.failed)
+          const EmptyState('No approved trainers.'),
+        for (final application in approved) _applicationCard(application),
+        const SectionHeader('Previously reviewed'),
+        for (final application in reviewed) _applicationCard(application),
+        if (reviewed.isEmpty) const EmptyState('No reviewed trainer requests.'),
+      ];
+    },
+  );
+
+  Widget _applicationCard(TrainerApplication application) => _ReviewCard(
+    key: ValueKey(application.uid),
+    title: application.name,
+    subtitle: [
+      if (application.email.isNotEmpty) application.email,
+      application.status?.label ?? 'Unknown',
+    ].join(' · '),
+    children: [
+      if (application.field('academy').isNotEmpty) ...[
+        Text(application.field('academy')),
+        Text(application.field('position')),
+        Text('Contact: ${application.field('contact')}'),
+        Text(application.field('reason')),
+      ],
+      if (application.field('belt').isNotEmpty)
+        Text('Belt: ${application.field('belt')}'),
+      if (application.field('reviewReason').isNotEmpty)
+        Text(application.field('reviewReason')),
+      if (application.status == ReviewStatus.pending)
+        _ReviewActions(
+          busy: _busy,
+          onSelect: (decision) => _decideApplication(application, decision),
+        ),
+      if (application.status == ReviewStatus.approved)
+        OutlinedButton(
+          onPressed: _busy
+              ? null
+              : () => _decideApplication(application, ReviewStatus.revoked),
+          child: const Text('Revoke access'),
+        ),
+      if (application.status == ReviewStatus.revoked)
+        OutlinedButton(
+          onPressed: _busy
+              ? null
+              : () => _decideApplication(application, ReviewStatus.approved),
+          child: const Text('Reinstate Access'),
+        ),
+      if (application.status == ReviewStatus.rejected ||
+          application.status == ReviewStatus.revoked)
+        OutlinedButton(
+          onPressed: _busy
+              ? null
+              : () => _manage(
+                  title: 'Delete trainer application?',
+                  description: 'This removes the previous decision from the applicant’s Profile. The applicant can submit a new request.',
+                  action: 'Delete application',
+                  save: () =>
+                      _store.deleteApplication(_access, application.uid),
+                ),
+          child: const Text('Delete application'),
+        ),
+    ],
+  );
+
+  Widget _videoSubmissions() {
+    final catalog = _techniques.rows;
+    if (catalog == null) {
+      return Center(child: _publicationNotice());
+    }
+    return _submissionFeed(catalog.map((item) => item.id).toSet());
+  }
+
+  Widget _publicationNotice() => _FeedNotice(
+    query: _techniques,
+    title: 'publication status',
+    loadFailure: 'Could not verify publication status.',
+    retry: () => _retry(_techniques),
+  );
+
+  Widget _submissionFeed(Set<String> published) => _DashboardFeed(
+    query: _submissions,
+    title: 'video submissions',
+    loadFailure: 'Could not load video submissions.',
+    retry: () => _retry(_submissions),
+    content: (submissions) {
+      final groups = {
+        for (final status in SubmissionFilter.values)
+          status: <TechniqueSubmission>[],
+      };
+      for (final item in submissions) {
+        if (item.archived) continue;
+        final status = SubmissionFilter.classify(item, published);
+        if (status != null) groups[status]!.add(item);
+      }
+      for (final group in groups.values) {
+        group.sort((first, second) {
+          final byDate = (second.submittedAt?.millisecondsSinceEpoch ?? 0)
+              .compareTo(first.submittedAt?.millisecondsSinceEpoch ?? 0);
+          return byDate == 0 ? second.id.compareTo(first.id) : byDate;
+        });
+      }
+      final count = groups.values.fold(
+        0,
+        (total, group) => total + group.length,
+      );
+      final visible = _filter == null ? SubmissionFilter.values : [_filter!];
+      return [
+        _publicationNotice(),
+        Wrap(
+          spacing: 8,
+          children: [
+            for (final status in [null, ...SubmissionFilter.values])
+              ChoiceChip(
+                key: ValueKey('video-filter-${status?.name ?? 'all'}'),
+                label: Text(
+                  '${status?.label ?? 'All Statuses'} · ${status == null ? count : groups[status]!.length}',
+                ),
+                selected: _filter == status,
+                selectedColor: _adminColor.withValues(alpha: .24),
+                onSelected: (_) => setState(() => _filter = status),
               ),
-              Text(
-                '${submissions.length} total',
-                style: const TextStyle(color: Colors.black54),
-              ),
-            ],
+          ],
+        ),
+        DropdownButton<SubmissionFilter?>(
+          value: _filter,
+          hint: const Text('All Statuses'),
+          isExpanded: true,
+          onChanged: (status) => setState(() => _filter = status),
+          items: [
+            const DropdownMenuItem(value: null, child: Text('All Statuses')),
+            for (final status in SubmissionFilter.values)
+              DropdownMenuItem(value: status, child: Text(status.label)),
+          ],
+        ),
+        if (count == 0 || (_filter != null && groups[_filter]!.isEmpty))
+          EmptyState(
+            count == 0
+                ? 'No video submissions yet.'
+                : 'No submissions match this status.',
           ),
+        for (final status in visible)
+          if (groups[status]!.isNotEmpty) ...[
+            if (_filter == null) SectionHeader(status.label),
+            for (final submission in groups[status]!)
+              _submissionCard(submission, status),
+          ],
+      ];
+    },
+  );
 
-          const SizedBox(height: 12),
+  Widget _submissionCard(
+    TechniqueSubmission submission,
+    SubmissionFilter status,
+  ) => _ReviewCard(
+    key: ValueKey(submission.id),
+    title: submission.technique.name,
+    subtitle:
+        '${submission.technique.category} · ${switch (status) {
+          SubmissionFilter.approved => 'Approved · Published',
+          SubmissionFilter.removed => 'Approved · Removed from Library',
+          _ => status.label,
+        }}',
+    children: [
+      Text('Submitted by: ${submission.name}'),
+      if (submission.email.isNotEmpty) Text(submission.email),
+      _TechniqueInformation(
+        technique: submission.technique,
+        guard: _guardOverlay,
+      ),
+      if (status == SubmissionFilter.pending)
+        _ReviewActions(
+          busy: _busy,
+          onSelect: (decision) =>
+              _perform(() => _store.moderate(_access, submission.id, decision)),
+        ),
+      if (status == SubmissionFilter.rejected) ...[
+        OutlinedButton(
+          onPressed: _busy ? null : () => _reopen(submission),
+          child: const Text('Reopen for Review'),
+        ),
+        OutlinedButton(
+          onPressed: _busy
+              ? null
+              : () => _manage(
+                  title: 'Delete rejected submission?',
+                  description: 'This removes the rejected review record.',
+                  action: 'Delete submission',
+                  save: () =>
+                      _store.deleteRejectedSubmission(_access, submission.id),
+                ),
+          child: const Text('Delete submission'),
+        ),
+      ],
+      if (status == SubmissionFilter.removed)
+        OutlinedButton(
+          onPressed: _busy
+              ? null
+              : () => _manage(
+                  title: 'Republish technique?',
+                  description: 'This restores the original submission to the library using the same technique ID.',
+                  action: 'Republish',
+                  save: () => _store.republish(_access, submission.id),
+                ),
+          child: const Text('Republish'),
+        ),
+      if (status == SubmissionFilter.approved ||
+          status == SubmissionFilter.removed)
+        OutlinedButton(
+          onPressed: _busy
+              ? null
+              : () => _manage(
+                  title: 'Archive review record?',
+                  description: 'This hides the review record. Any published technique stays in the library.',
+                  action: 'Archive',
+                  save: () => _store.archiveSubmission(_access, submission.id),
+                ),
+          child: const Text('Archive Review Record'),
+        ),
+    ],
+  );
 
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
+  Widget _publishedTechniques() => _DashboardFeed(
+    query: _techniques,
+    title: 'published techniques',
+    loadFailure: 'Could not load published techniques.',
+    retry: () => _retry(_techniques),
+    content: (techniques) => [
+      _CountStrip({'Published': techniques.length}),
+      FilledButton.icon(
+        style: FilledButton.styleFrom(backgroundColor: _adminColor),
+        onPressed: _edit,
+        icon: const Icon(Icons.add),
+        label: const Text('Add Published Technique'),
+      ),
+      if (techniques.isEmpty)
+        const EmptyState('No published techniques available.'),
+      for (final technique in techniques)
+        _ReviewCard(
+          key: ValueKey(technique.id),
+          title: technique.name,
+          subtitle: '${technique.category} · ${technique.difficulty}',
+          children: [
+            _TechniqueInformation(technique: technique, guard: _guardOverlay),
+            Row(
               children: [
-                for (final filter in ['All', 'Pending', 'Approved', 'Rejected'])
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(filter),
-                      selected: selectedFilter == filter,
-                      onSelected: (_) {
-                        setState(() {
-                          selectedFilter = filter;
-                        });
-                      },
-                    ),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _busy ? null : () => _edit(technique),
+                    child: const Text('Edit'),
                   ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _busy ? null : () => _remove(technique),
+                    child: const Text('Remove'),
+                  ),
+                ),
               ],
             ),
-          ),
+          ],
+        ),
+    ],
+  );
 
-          const SizedBox(height: 12),
-
-          if (filteredSubmissions.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(24),
-              child: Center(child: Text('No submissions in this category.')),
-            ),
-
-          for (final video in filteredSubmissions) _videoCard(video),
-
-          const SizedBox(height: 16),
-
-          const Center(
-            child: Text(
-              'Demo dashboard — submissions are not saved yet.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: Colors.black54),
-            ),
-          ),
+  @override
+  Widget build(BuildContext context) {
+    if (!_canView) {
+      return const Scaffold(
+        body: Center(child: Text('Administrator access is unavailable.')),
+      );
+    }
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: const Text('Admin Dashboard'),
+        backgroundColor: _adminColor,
+        foregroundColor: Colors.white,
+        bottom: _tabs(context),
+      ),
+      body: TabBarView(
+        controller: _tabsController,
+        children: [
+          _DashboardPage(child: _trainerRequests()),
+          _DashboardPage(child: _videoSubmissions()),
+          _DashboardPage(child: _publishedTechniques()),
         ],
       ),
     );
   }
 
-  Widget _summaryCard(String label, int count, Color color) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Column(
-          children: [
-            Text(
-              '$count',
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(label, style: const TextStyle(fontSize: 12)),
-          ],
-        ),
-      ),
+  TabBar _tabs(BuildContext context) {
+    const labels = [
+      'Trainer Requests',
+      'Video Submissions',
+      'Published Techniques',
+    ];
+    final style = Theme.of(context).textTheme.titleSmall!;
+    final width = MediaQuery.sizeOf(context).width / labels.length - 8;
+    var height = 46.0;
+    for (final label in labels) {
+      final painter = TextPainter(
+        text: TextSpan(text: label, style: style),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+      )..layout(maxWidth: width);
+      if (painter.height + 16 > height) height = painter.height + 16;
+      painter.dispose();
+    }
+    return TabBar(
+      controller: _tabsController,
+      labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+      labelStyle: style,
+      unselectedLabelStyle: style,
+      labelColor: Colors.white,
+      unselectedLabelColor: Colors.white70,
+      indicatorColor: Colors.white,
+      tabs: [
+        for (final label in labels)
+          Tab(
+            height: height,
+            child: Text(label, textAlign: TextAlign.center),
+          ),
+      ],
     );
-  }
-
-  Widget _videoCard(_VideoSubmission video) {
-    final statusColor = switch (video.status) {
-      'Approved' => Colors.green,
-      'Rejected' => Colors.red,
-      _ => Colors.orange,
-    };
-
-    return Card(
-      color: Colors.white,
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.play_circle_outline, color: adminColor, size: 32),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    video.title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            Text(
-              '${video.instructor} • ${video.category}',
-              style: const TextStyle(fontSize: 13, color: Colors.black54),
-            ),
-
-            if (video.description.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(video.description),
-            ],
-
-            if (video.youtubeUrl.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                video.youtubeUrl,
-                style: TextStyle(fontSize: 12, color: adminColor),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-
-            const SizedBox(height: 12),
-
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: statusColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                video.status,
-                style: TextStyle(
-                  color: statusColor,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-
-            if (video.status != 'Pending') ...[
-              const SizedBox(height: 12),
-              TextButton.icon(
-                onPressed: () => updateStatus(video, 'Pending'),
-                icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('Reopen for Review'),
-              ),
-            ],
-
-            if (video.status == 'Pending') ...[
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => updateStatus(video, 'Rejected'),
-                      icon: const Icon(Icons.close, size: 18),
-                      label: const Text('Reject'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: adminColor,
-                      ),
-                      onPressed: () => updateStatus(video, 'Approved'),
-                      icon: const Icon(Icons.check, size: 18),
-                      label: const Text('Approve'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ],
-        ), // Column
-      ), // Padding
-    ); // Card
   }
 }
 
-class _VideoSubmissionForm extends StatefulWidget {
-  final Color adminColor;
-  final void Function(_VideoSubmission) onSubmit;
+class _DashboardQuery<T> {
+  _DashboardQuery(this._watch, this._changed);
 
-  const _VideoSubmissionForm({
-    required this.adminColor,
-    required this.onSubmit,
-  });
+  final Stream<ReviewSnapshot<T>> Function() _watch;
+  final VoidCallback _changed;
+  StreamSubscription<ReviewSnapshot<T>>? _subscription;
+  Timer? _deadline;
+  bool _started = false;
+  bool _waiting = true;
+  bool failed = false;
+  List<T>? rows;
 
-  @override
-  State<_VideoSubmissionForm> createState() => _VideoSubmissionFormState();
+  bool get refreshing => rows != null && _waiting;
+
+  void start() {
+    if (_started) return;
+    _started = true;
+    failed = false;
+    _waiting = true;
+    _startDeadline();
+    try {
+      _subscription = _watch().listen(
+        _received,
+        onError: _failed,
+        onDone: _failed,
+      );
+    } catch (error) {
+      // A query factory can also fail before it returns a stream.
+      scheduleMicrotask(() {
+        if (_started) _failed(error);
+      });
+    }
+  }
+
+  void _startDeadline() {
+    _deadline ??= Timer(const Duration(seconds: 12), _failed);
+  }
+
+  void _received(ReviewSnapshot<T> snapshot) {
+    if (snapshot.fromCache) {
+      // Wait for a server result before showing an empty list or classifying
+      // a publication. During reconnection keep the last verified rows.
+      if (_waiting || failed) return;
+      _waiting = true;
+      _startDeadline();
+    } else {
+      _cancelDeadline();
+      rows = snapshot.rows;
+      failed = false;
+      _waiting = false;
+    }
+    _changed();
+  }
+
+  void _failed([Object? error]) {
+    _cancelDeadline();
+    if (error is FirebaseException &&
+        (error.code == 'permission-denied' ||
+            error.code == 'unauthenticated')) {
+      stop(clear: true);
+      _started = true; // Wait for an explicit retry.
+    }
+    if (failed) return;
+    failed = true;
+    _waiting = false;
+    _changed();
+  }
+
+  void _cancelDeadline() {
+    _deadline?.cancel();
+    _deadline = null;
+  }
+
+  void retry() {
+    stop();
+    start();
+  }
+
+  void stop({bool clear = false}) {
+    _cancelDeadline();
+    unawaited(_subscription?.cancel());
+    _subscription = null;
+    _started = false;
+    if (clear) rows = null;
+  }
 }
 
-class _VideoSubmissionFormState extends State<_VideoSubmissionForm> {
-  final _formKey = GlobalKey<FormState>();
-
-  final _titleController = TextEditingController();
-  final _instructorController = TextEditingController();
-  final _descriptionController = TextEditingController();
-  final _urlController = TextEditingController();
-
-  String _category = 'Submissions';
+class _DashboardPage extends StatefulWidget {
+  const _DashboardPage({required this.child});
+  final Widget child;
 
   @override
-  void dispose() {
-    _titleController.dispose();
-    _instructorController.dispose();
-    _descriptionController.dispose();
-    _urlController.dispose();
-    super.dispose();
-  }
+  State<_DashboardPage> createState() => _DashboardPageState();
+}
 
-  String? _validateYoutubeUrl(String? value) {
-    final text = value?.trim() ?? '';
-
-    if (text.isEmpty) {
-      return 'Please enter a YouTube URL';
-    }
-
-    final uri = Uri.tryParse(text);
-
-    if (uri == null || uri.scheme != 'https' || !uri.hasAuthority) {
-      return 'Please enter a valid HTTPS URL';
-    }
-
-    final host = uri.host.toLowerCase();
-
-    final youtubeHost = [
-      'youtube.com',
-      'www.youtube.com',
-      'm.youtube.com',
-    ].contains(host);
-
-    final shortHost = ['youtu.be', 'www.youtu.be'].contains(host);
-
-    final videoId = youtubeHost && uri.path == '/watch'
-        ? uri.queryParameters['v']
-        : shortHost && uri.pathSegments.length == 1
-        ? uri.pathSegments.first
-        : youtubeHost &&
-              uri.pathSegments.length == 2 &&
-              ['shorts', 'embed'].contains(uri.pathSegments.first)
-        ? uri.pathSegments.last
-        : null;
-
-    final validId =
-        videoId != null && RegExp(r'^[a-zA-Z0-9_-]{11}$').hasMatch(videoId);
-
-    return validId ? null : 'Enter a valid YouTube video link';
-  }
-
-  void _submit() {
-    if (!_formKey.currentState!.validate()) return;
-
-    widget.onSubmit(
-      _VideoSubmission(
-        title: _titleController.text.trim(),
-        instructor: _instructorController.text.trim(),
-        category: _category,
-        description: _descriptionController.text.trim(),
-        youtubeUrl: _urlController.text.trim(),
-      ),
-    );
-  }
+class _DashboardPageState extends State<_DashboardPage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        20,
-        20,
-        20,
-        MediaQuery.viewInsetsOf(context).bottom + 24,
-      ),
-      child: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Submit YouTube Video',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Submit a BJJ technique video for review.',
-                style: TextStyle(color: Colors.black54),
-              ),
-              const SizedBox(height: 20),
-              TextFormField(
-                controller: _titleController,
-                decoration: const InputDecoration(
-                  labelText: 'Technique Name',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) => value == null || value.trim().isEmpty
-                    ? 'Please enter a technique name'
-                    : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _instructorController,
-                decoration: const InputDecoration(
-                  labelText: 'Instructor Name',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) => value == null || value.trim().isEmpty
-                    ? 'Please enter an instructor name'
-                    : null,
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: _category,
-                decoration: const InputDecoration(
-                  labelText: 'Category',
-                  border: OutlineInputBorder(),
-                ),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'Submissions',
-                    child: Text('Submissions'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'Takedowns',
-                    child: Text('Takedowns'),
-                  ),
-                  DropdownMenuItem(value: 'Guard', child: Text('Guard')),
-                  DropdownMenuItem(value: 'Escapes', child: Text('Escapes')),
-                ],
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() => _category = value);
-                  }
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _descriptionController,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Description',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _urlController,
-                keyboardType: TextInputType.url,
-                decoration: const InputDecoration(
-                  labelText: 'YouTube Video URL',
-                  hintText: 'https://www.youtube.com/watch?v=...',
-                  border: OutlineInputBorder(),
-                ),
-                validator: _validateYoutubeUrl,
-              ),
-              const SizedBox(height: 20),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: widget.adminColor,
-                  padding: const EdgeInsets.all(16),
-                ),
-                onPressed: _submit,
-                icon: const Icon(Icons.send),
-                label: const Text('Submit Video'),
-              ),
-            ],
+    super.build(context);
+    return widget.child;
+  }
+}
+
+class _FeedNotice extends StatelessWidget {
+  const _FeedNotice({
+    required this.query,
+    required this.title,
+    required this.loadFailure,
+    required this.retry,
+  });
+
+  final _DashboardQuery<Object> query;
+  final String title;
+  final String loadFailure;
+  final VoidCallback retry;
+
+  @override
+  Widget build(BuildContext context) {
+    if (query.failed) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            query.rows == null
+                ? loadFailure
+                : '$loadFailure Showing the last loaded data.',
+            textAlign: TextAlign.center,
           ),
-        ),
-      ),
+          TextButton(onPressed: retry, child: Text('Retry $title')),
+        ],
+      );
+    }
+    if (query.rows != null && !query.refreshing) return const SizedBox.shrink();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const LinearProgressIndicator(),
+        Text(query.refreshing ? 'Refreshing $title…' : 'Loading $title…'),
+      ],
     );
   }
+}
+
+class _DashboardFeed<T extends Object> extends StatelessWidget {
+  const _DashboardFeed({
+    required this.query,
+    required this.title,
+    required this.loadFailure,
+    required this.retry,
+    required this.content,
+  });
+
+  final _DashboardQuery<T> query;
+  final String title;
+  final String loadFailure;
+  final VoidCallback retry;
+  final List<Widget> Function(List<T>) content;
+
+  @override
+  Widget build(BuildContext context) {
+    final notice = _FeedNotice(
+      query: query,
+      title: title,
+      loadFailure: loadFailure,
+      retry: retry,
+    );
+    final rows = query.rows;
+    if (rows == null) return Center(child: notice);
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [notice, ...content(rows)],
+    );
+  }
+}
+
+class _CountStrip extends StatelessWidget {
+  const _CountStrip(this.counts);
+  final Map<String, int> counts;
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+    spacing: 8,
+    children: [
+      for (final entry in counts.entries)
+        Chip(
+          backgroundColor: _adminColor.withValues(alpha: .14),
+          label: Text('${entry.key} · ${entry.value}'),
+        ),
+    ],
+  );
+}
+
+class _ReviewCard extends StatelessWidget {
+  const _ReviewCard({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.children,
+  });
+
+  final String title;
+  final String subtitle;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => AppCard(
+    child: ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+      leading: const Icon(Icons.fact_check_outlined, color: _adminColor),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      children: children,
+    ),
+  );
+}
+
+class _ReviewActions extends StatelessWidget {
+  const _ReviewActions({required this.busy, required this.onSelect});
+
+  final bool busy;
+  final ValueChanged<ReviewStatus> onSelect;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Expanded(
+        child: OutlinedButton(
+          onPressed: busy ? null : () => onSelect(ReviewStatus.rejected),
+          child: const Text('Reject'),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: _adminColor),
+          onPressed: busy ? null : () => onSelect(ReviewStatus.approved),
+          child: const Text('Approve'),
+        ),
+      ),
+    ],
+  );
+}
+
+class _TechniqueInformation extends StatelessWidget {
+  const _TechniqueInformation({required this.technique, required this.guard});
+  final Technique technique;
+  final Widget Function(Widget) guard;
+
+  @override
+  Widget build(BuildContext context) {
+    final videoId = Technique.youtubeId(technique.videoUrl);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('${technique.instructor ?? ''} · ${technique.difficulty}'),
+        Text(technique.description),
+        if (videoId != null)
+          TextButton.icon(
+            onPressed: () =>
+                showFormSheet(context, guard(_VideoPreview(videoId))),
+            icon: const Icon(Icons.play_circle_outline),
+            label: const Text('Preview YouTube video'),
+          ),
+      ],
+    );
+  }
+}
+
+class _VideoPreview extends StatefulWidget {
+  const _VideoPreview(this.id);
+  final String id;
+
+  @override
+  State<_VideoPreview> createState() => _VideoPreviewState();
+}
+
+class _VideoPreviewState extends State<_VideoPreview> {
+  late final _controller = YoutubePlayerController.fromVideoId(
+    videoId: widget.id,
+    autoPlay: false,
+  );
+
+  @override
+  void dispose() {
+    _controller.close();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => YoutubePlayer(controller: _controller);
 }

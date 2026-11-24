@@ -40,6 +40,8 @@ class RoleStore extends ChangeNotifier {
   StreamSubscription<RoleDocument>? _subscription;
   String? _uid;
   Object _binding = Object();
+  Object _access = Object();
+  Object get access => _access;
   RoleStatus _status = RoleStatus.signedOut;
   UserRole? _role;
 
@@ -55,6 +57,7 @@ class RoleStore extends ChangeNotifier {
   void bind(String? uid) {
     if (_uid == uid) return;
     final binding = _binding = Object();
+    _access = Object();
     unawaited(_subscription?.cancel());
     _subscription = null;
     _uid = uid;
@@ -86,6 +89,7 @@ class RoleStore extends ChangeNotifier {
   }
 
   void _update(RoleStatus status, [UserRole? role]) {
+    if (status != _status || role != _role) _access = Object();
     _status = status;
     _role = role;
     notifyListeners();
@@ -94,6 +98,7 @@ class RoleStore extends ChangeNotifier {
   @override
   void dispose() {
     _binding = Object();
+    _access = Object();
     unawaited(_subscription?.cancel());
     super.dispose();
   }
