@@ -134,25 +134,19 @@ class _TechniqueDetailScreenState extends State<TechniqueDetailScreen> {
     return StreamBuilder<Technique?>(
       stream: _techniqueStream,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        if (snapshot.hasError) {
-          return const Scaffold(
-            body: Center(child: Text('Could not load technique.')),
-          );
-        }
-
         final technique = snapshot.data;
 
-        if (technique == null) {
+        if (technique == null || snapshot.hasError) {
           _prepareVideo(null);
           return Scaffold(
             appBar: AppBar(title: const Text('Technique Details')),
-            body: const Center(child: Text('Technique not found.')),
+            body: Center(
+              child: snapshot.hasError
+                  ? const Text('Could not load technique.')
+                  : snapshot.connectionState == ConnectionState.waiting
+                  ? const CircularProgressIndicator()
+                  : const Text('Technique not found.'),
+            ),
           );
         }
 

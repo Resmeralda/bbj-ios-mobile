@@ -25,7 +25,9 @@ void main() {
               routes: [
                 GoRoute(
                   path: 'log',
-                  builder: (_, _) => const Scaffold(body: Text('Session form')),
+                  builder: (_, state) => Scaffold(
+                    body: Text('Session form ${state.uri.queryParameters['type']}'),
+                  ),
                 ),
               ],
             ),
@@ -95,7 +97,7 @@ void main() {
           await tester.ensureVisible(_tile(label));
           await tester.tap(_tile(label));
           await tester.pumpAndSettle();
-          expect(find.text('Session form'), findsOneWidget);
+          expect(find.text('Session form $label'), findsOneWidget);
           router.pop();
           await tester.pumpAndSettle();
         }

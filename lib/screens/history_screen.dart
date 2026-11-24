@@ -165,7 +165,11 @@ class _HistoryBodyState extends State<HistoryBody> {
             ),
           ),
           const SizedBox(height: 8),
-          if (list.isEmpty)
+          if (_store.error case final error?)
+            Text(error)
+          else if (_store.loading)
+            const LinearProgressIndicator()
+          else if (list.isEmpty)
             const Padding(
               padding: EdgeInsets.all(32),
               child: Center(

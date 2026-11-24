@@ -145,14 +145,6 @@ class _ProfileFormState extends State<_ProfileForm> {
                     style: const TextStyle(fontSize: 40, color: AppColors.home),
                   ),
                 ),
-                TextButton.icon(
-                  // TODO: image_picker + Firebase Storage upload
-                  onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Photo upload coming soon')),
-                  ),
-                  icon: const Icon(Icons.photo_camera),
-                  label: const Text('Change photo'),
-                ),
               ],
             ),
           ),

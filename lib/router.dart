@@ -181,6 +181,7 @@ GoRouter createAppRouter(
                   path: 'log',
                   // `extra` is lost on web refresh / deep links, so don't hard-cast.
                   builder: (_, state) => LogSessionScreen(
+                    initialType: state.uri.queryParameters['type'],
                     session: state.extra is TrainingSession
                         ? state.extra as TrainingSession
                         : null,
