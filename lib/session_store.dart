@@ -14,7 +14,7 @@ class SessionStore extends ChangeNotifier {
 
   final FirebaseFirestore? _firestore;
   List<TrainingSession> _sessions = [];
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _sub;
+  StreamSubscription<List<TrainingSession>>? _sub;
   String? _uid;
   Object _account = Object();
   Object get account => _account;
@@ -47,37 +47,50 @@ class SessionStore extends ChangeNotifier {
 
     loading = true;
     notifyListeners();
-    _sub = _col!.snapshots().listen(
-      (snap) {
-        _sessions = [
-          for (final d in snap.docs) TrainingSession.fromMap(d.id, d.data()),
-        ];
-        loading = false;
-        error = null;
-        notifyListeners();
-      },
-      onError: (Object e) {
-        debugPrint('Session sync failed: $e');
-        loading = false;
-        error = 'Could not load sessions. Check your connection.';
-        notifyListeners();
-      },
-    );
+    final account = _account;
+    _sub = _col!
+        .snapshots()
+        .map(
+          (snap) => [
+            for (final d in snap.docs) TrainingSession.fromMap(d.id, d.data()),
+          ],
+        )
+        .listen(
+          (sessions) {
+            if (account != _account) return;
+            _sessions = sessions;
+            loading = false;
+            error = null;
+            notifyListeners();
+          },
+          onError: (Object e) {
+            if (account != _account) return;
+            debugPrint('Session sync failed: $e');
+            loading = false;
+            error = 'Could not load sessions. Check your connection.';
+            notifyListeners();
+          },
+        );
   }
 
   /// Newest first.
   List<TrainingSession> get sessions =>
       [..._sessions]..sort((a, b) => b.date.compareTo(a.date));
 
-  /// Sessions since Monday of the current week, newest first.
-  List<TrainingSession> get thisWeek {
-    final now = DateTime.now();
+  /// Sessions in the local Monday–Sunday week, newest first.
+  List<TrainingSession> get thisWeek => sessionsForWeek(DateTime.now());
+
+  List<TrainingSession> sessionsForWeek(DateTime date) {
+    final local = date.toLocal();
     final monday = DateTime(
-      now.year,
-      now.month,
-      now.day,
-    ).subtract(Duration(days: now.weekday - 1));
-    return sessions.where((s) => !s.date.isBefore(monday)).toList();
+      local.year,
+      local.month,
+      local.day - local.weekday + 1,
+    );
+    final nextMonday = DateTime(monday.year, monday.month, monday.day + 7);
+    return sessions
+        .where((s) => !s.date.isBefore(monday) && s.date.isBefore(nextMonday))
+        .toList();
   }
 
   String newId() =>

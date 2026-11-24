@@ -89,7 +89,7 @@ void main() {
     expect(save, findsNothing);
     router.go('/home');
     await tester.pumpAndSettle();
-    expect(find.text('3 of 6 sessions'), findsOneWidget);
+    expect(find.text('0 of 6 sessions'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

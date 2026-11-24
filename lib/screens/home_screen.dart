@@ -1,25 +1,48 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../models/training_session.dart';
 import '../profile_store.dart';
+import '../session_store.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/form_helpers.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key, this.store});
+  const HomeScreen({super.key, this.store, this.sessions});
 
   final ProfileStore? store;
+  final SessionStore? sessions;
 
   @override
   Widget build(BuildContext context) {
     final profiles = store ?? profileStore;
-    // Sample data; replace with Firestore streams.
+    final training = sessions ?? sessionStore;
     return ListenableBuilder(
-      listenable: profiles,
+      listenable: Listenable.merge([profiles, training]),
       builder: (context, _) {
         final p = profiles.profile;
-        const done = 3;
+        final account = training.account;
+        final week = training.thisWeek;
+        final done = week.length;
         final goal = p.weeklyGoal;
+        final progress = (done / goal).clamp(0.0, 1.0);
+        final hours = week.fold(0.0, (total, session) => total + session.hours);
+        final rounds = week.fold(0, (total, session) => total + session.rounds);
+        final techniques = week
+            .expand((session) => session.techniques.split(','))
+            .map((name) => name.trim().toLowerCase())
+            .where((name) => name.isNotEmpty)
+            .toSet()
+            .length;
+        final unavailable = training.loading || training.error != null;
+        final remaining = goal - done;
+        final nextStep = training.loading
+            ? 'Loading your training sessions…'
+            : training.error ??
+                  (remaining <= 0
+                      ? 'You reached your weekly goal!'
+                      : '$remaining more ${remaining == 1 ? 'session' : 'sessions'} to reach your goal this week!');
         return Scaffold(
           body: SafeArea(
             child: ListView(
@@ -79,16 +102,23 @@ class HomeScreen extends StatelessWidget {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      Text('$done of $goal sessions'),
+                      Text(
+                        unavailable
+                            ? '— of $goal sessions'
+                            : '$done of $goal sessions',
+                      ),
                       const SizedBox(height: 10),
                       Row(
                         children: [
                           Expanded(
-                            child: ProgressBar(done / goal, AppColors.home),
+                            child: ProgressBar(
+                              unavailable ? 0 : progress,
+                              AppColors.home,
+                            ),
                           ),
                           const SizedBox(width: 10),
                           Text(
-                            '${(done / goal * 100).round()}%',
+                            unavailable ? '—' : '${(progress * 100).round()}%',
                             style: const TextStyle(
                               color: AppColors.home,
                               fontWeight: FontWeight.bold,
@@ -99,50 +129,53 @@ class HomeScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-                const Row(
+                Row(
                   children: [
                     _Stat(
                       Icons.sports_martial_arts,
-                      '3',
+                      unavailable ? '—' : '$done',
                       'Sessions',
                       AppColors.home,
                     ),
-                    _Stat(Icons.schedule, '4.5', 'Hours Trained', Colors.teal),
+                    _Stat(
+                      Icons.schedule,
+                      unavailable ? '—' : hours.toStringAsFixed(1),
+                      'Hours Trained',
+                      Colors.teal,
+                    ),
                     _Stat(
                       Icons.people_alt,
-                      '12',
+                      unavailable ? '—' : '$rounds',
                       'Sparring Rounds',
                       Colors.deepOrange,
                     ),
                     _Stat(
                       Icons.menu_book,
-                      '5',
+                      unavailable ? '—' : '$techniques',
                       'Techniques Practiced',
                       Colors.deepPurple,
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                const AppCard(
+                AppCard(
                   child: Row(
                     children: [
-                      Icon(
+                      const Icon(
                         Icons.track_changes,
                         color: AppColors.home,
                         size: 40,
                       ),
-                      SizedBox(width: 12),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
+                            const Text(
                               'Next Step',
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
-                            Text(
-                              '1 more session to reach your goal this week!',
-                            ),
+                            Text(nextStep),
                           ],
                         ),
                       ),
@@ -194,13 +227,29 @@ class HomeScreen extends StatelessWidget {
                   action: 'View All',
                   onAction: () => context.go('/training'),
                 ),
-                const _SessionTile(
-                  'Tue, Apr 15',
-                  'Gi Class',
-                  '1.5 hr',
-                  '5 rounds',
-                  'Guard passing, side control',
-                ),
+                if (!unavailable && week.isEmpty)
+                  const AppCard(child: Text('No training sessions this week.')),
+                if (!unavailable)
+                  for (final session in week.take(3))
+                    _SessionTile(
+                      formatDate(session.date.toLocal()),
+                      session.type,
+                      formatHours(session.hours),
+                      '${session.rounds} rounds',
+                      [
+                        session.techniques,
+                        session.notes,
+                      ].where((text) => text.isNotEmpty).join(' • '),
+                      onTap: () {
+                        if (isCurrentFormAccount(
+                          context,
+                          account,
+                          training.account,
+                        )) {
+                          context.push('/training/log', extra: session);
+                        }
+                      },
+                    ),
               ],
             ),
           ),
@@ -244,16 +293,19 @@ class _Stat extends StatelessWidget {
 
 class _SessionTile extends StatelessWidget {
   final String date, title, hours, rounds, notes;
+  final VoidCallback onTap;
   const _SessionTile(
     this.date,
     this.title,
     this.hours,
     this.rounds,
-    this.notes,
-  );
+    this.notes, {
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) => AppCard(
+    onTap: onTap,
     child: Row(
       children: [
         Container(
@@ -285,7 +337,8 @@ class _SessionTile extends StatelessWidget {
                 '$hours  •  $rounds',
                 style: const TextStyle(color: AppColors.muted),
               ),
-              Text(notes, style: const TextStyle(color: AppColors.muted)),
+              if (notes.isNotEmpty)
+                Text(notes, style: const TextStyle(color: AppColors.muted)),
             ],
           ),
         ),
