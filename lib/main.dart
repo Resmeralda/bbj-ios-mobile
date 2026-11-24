@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:go_router/go_router.dart';
 
 import 'firebase_options.dart';
 import 'data/stores.dart';
@@ -33,13 +34,15 @@ Future<void> main() async {
 }
 
 class BjjFitnessApp extends StatelessWidget {
-  const BjjFitnessApp({super.key});
+  const BjjFitnessApp({super.key, this.router});
+
+  final GoRouter? router;
 
   @override
   Widget build(BuildContext context) => MaterialApp.router(
     title: 'BJJ Fitness',
     debugShowCheckedModeBanner: false,
     theme: buildTheme(),
-    routerConfig: appRouter,
+    routerConfig: router ?? appRouter,
   );
 }
