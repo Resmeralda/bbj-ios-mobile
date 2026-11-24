@@ -1,10 +1,17 @@
 import 'package:bjj_app/data/collection_store.dart';
+import 'package:bjj_app/data/recovery_settings_store.dart';
 import 'package:bjj_app/models/health_models.dart';
+import 'package:bjj_app/models/training_session.dart' show formatDate;
+import 'package:bjj_app/screens/recovery_details_screen.dart';
 import 'package:bjj_app/screens/recovery_screen.dart';
+import 'package:bjj_app/screens/recovery_score_widgets.dart';
+import 'package:bjj_app/screens/recovery_settings_screen.dart';
+import 'package:bjj_app/widgets/common.dart';
 import 'package:bjj_app/widgets/form_helpers.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 const _uid = 'recovery-test-user';
 
@@ -28,44 +35,73 @@ CollectionStore<T> _boundStore<T>(
   return store;
 }
 
-Future<FakeFirebaseFirestore> _openRecovery(WidgetTester tester) async {
-  final firestore = FakeFirebaseFirestore();
-  await tester.pumpWidget(
-    MaterialApp(
-      home: RecoveryScreen(
-        sleep: _boundStore(
-          firestore,
-          'sleep',
-          SleepEntry.fromMap,
-          (e) => e.toMap(),
-          (e) => e.id,
-          (e) => e.date,
-        ),
-        wellness: _boundStore(
-          firestore,
-          'wellness',
-          WellnessEntry.fromMap,
-          (e) => e.toMap(),
-          (e) => e.id,
-          (e) => e.date,
-        ),
-        notes: _boundStore(
-          firestore,
-          'recovery_notes',
-          RecoveryNote.fromMap,
-          (e) => e.toMap(),
-          (e) => e.id,
-          (e) => e.date,
-        ),
-      ),
+Future<FakeFirebaseFirestore> _openRecovery(
+  WidgetTester tester, {
+  FakeFirebaseFirestore? database,
+}) async {
+  final firestore = database ?? FakeFirebaseFirestore();
+  final settings = RecoverySettingsStore(firestore: firestore);
+  addTearDown(settings.dispose);
+  await settings.bind(_uid);
+  final recovery = RecoveryScreen(
+    settings: settings,
+    sleep: _boundStore(
+      firestore,
+      'sleep',
+      SleepEntry.fromMap,
+      (e) => e.toMap(),
+      (e) => e.id,
+      (e) => e.date,
+    ),
+    wellness: _boundStore(
+      firestore,
+      'wellness',
+      WellnessEntry.fromMap,
+      (e) => e.toMap(),
+      (e) => e.id,
+      (e) => e.date,
+    ),
+    notes: _boundStore(
+      firestore,
+      'recovery_notes',
+      RecoveryNote.fromMap,
+      (e) => e.toMap(),
+      (e) => e.id,
+      (e) => e.date,
     ),
   );
+  final router = GoRouter(
+    initialLocation: '/recovery',
+    routes: [
+      GoRoute(
+        path: '/recovery',
+        builder: (_, _) => recovery,
+        routes: [
+          GoRoute(
+            path: 'details',
+            builder: (_, _) => RecoveryDetailsScreen(
+              sleep: recovery.sleep,
+              wellness: recovery.wellness,
+              settings: settings,
+            ),
+          ),
+          GoRoute(
+            path: 'settings',
+            builder: (_, _) => RecoverySettingsScreen(store: settings),
+          ),
+        ],
+      ),
+    ],
+  );
+  addTearDown(router.dispose);
+  await tester.pumpWidget(MaterialApp.router(routerConfig: router));
   await tester.pumpAndSettle();
   return firestore;
 }
 
 Future<void> _tap(WidgetTester tester, Finder finder) async {
   await tester.ensureVisible(finder);
+  await tester.pump();
   await tester.tap(finder);
   await tester.pumpAndSettle();
 }
@@ -75,7 +111,483 @@ Finder _tab(String label) => find.descendant(
   matching: find.text(label),
 );
 
+Finder _recentNotesLink() => find.descendant(
+  of: find.widgetWithText(SectionHeader, 'Recent Notes'),
+  matching: find.text('View All'),
+);
+
+Finder _goalInput() => find.widgetWithText(TextFormField, 'Sleep goal (hours)');
+
+void _expectScore(WidgetTester tester, int? score, Color color) {
+  final ring = tester.widget<CircularProgressIndicator>(
+    find.byType(CircularProgressIndicator),
+  );
+  expect(ring.value, (score ?? 0) / 100);
+  expect(ring.color, color);
+  expect(
+    tester
+        .widget<ExcludeSemantics>(
+          find
+              .ancestor(
+                of: find.byType(CircularProgressIndicator),
+                matching: find.byType(ExcludeSemantics),
+              )
+              .first,
+        )
+        .excluding,
+    score == null,
+  );
+}
+
+Future<void> _tallViewport(WidgetTester tester) async {
+  await tester.binding.setSurfaceSize(const Size(800, 1200));
+  addTearDown(() => tester.binding.setSurfaceSize(null));
+}
+
 void main() {
+  testWidgets(
+    'Recovery Details explains factors and rating bands on a narrow screen',
+    (tester) async {
+      await _tallViewport(tester);
+      await _openRecovery(tester);
+      await _tap(tester, find.text('View Details'));
+      await tester.binding.setSurfaceSize(const Size(320, 780));
+      await tester.pumpAndSettle();
+      final intro = find.text(
+        'Four equally weighted factors contribute to your score.',
+      );
+      await tester.scrollUntilVisible(intro, 200);
+      final card = find.ancestor(of: intro, matching: find.byType(AppCard));
+      Finder inGuide(Finder matching) =>
+          find.descendant(of: card, matching: matching);
+      expect(inGuide(find.text('25 points')), findsNWidgets(4));
+      for (final (label, icon) in [
+        ('Sleep', Icons.nightlight_round),
+        ('Energy', Icons.bolt),
+        ('Soreness', Icons.accessibility_new),
+        ('Mood', Icons.emoji_emotions),
+      ]) {
+        expect(inGuide(find.text(label)), findsOneWidget);
+        expect(inGuide(find.byIcon(icon)), findsOneWidget);
+      }
+      for (final (label, range, color) in [
+        ('Low', '0–39', Colors.red),
+        ('Moderate', '40–69', Colors.amber),
+        ('High', '70–100', Colors.green),
+      ]) {
+        expect(inGuide(find.text(label)), findsOneWidget);
+        expect(inGuide(find.text(range)), findsOneWidget);
+        expect(
+          inGuide(
+            find.byWidgetPredicate(
+              (widget) => widget is Container && widget.color == color,
+            ),
+          ),
+          findsOneWidget,
+        );
+      }
+      expect(
+        inGuide(
+          find.text(
+            'Higher energy, better sleep, positive mood, and lower soreness improve your score.',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        inGuide(
+          find.text(
+            'This score is a wellness estimate, not a medical assessment.',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('Overview and Details update partial metrics, score and rating', (
+    tester,
+  ) async {
+    await _tallViewport(tester);
+    final firestore = await _openRecovery(tester);
+    final now = DateTime.now();
+    final date = now.toIso8601String();
+    final sleep = firestore.doc('users/$_uid/sleep/night');
+    final wellness = firestore.doc('users/$_uid/wellness/check-in');
+    await wellness.set({'date': date, 'energy': 4, 'soreness': 2, 'hrv': 68});
+    await tester.pumpAndSettle();
+    _expectScore(tester, null, Colors.grey);
+    expect(find.text('4 / 5'), findsOneWidget);
+    expect(find.text('2 / 5'), findsOneWidget);
+    expect(find.text('68 ms'), findsOneWidget);
+
+    await sleep.set({'date': date, 'hours': 7.5, 'quality': 5});
+    await tester.pumpAndSettle();
+    expect(find.text('7.5 hr'), findsOneWidget);
+    expect(find.text('5 / 5'), findsOneWidget);
+    _expectScore(tester, null, Colors.grey);
+
+    await _tap(tester, find.text('View Details'));
+    expect(find.text('Recovery Details'), findsOneWidget);
+    expect(find.text('7.5 hr / 8 hr'), findsOneWidget);
+    expect(find.text('94% • 23.4 / 25 points'), findsOneWidget);
+    expect(find.text('75% • 18.8 / 25 points'), findsNWidgets(2));
+    expect(find.text('Not logged'), findsOneWidget);
+    expect(find.text('Recorded ${formatDate(now)}'), findsNWidgets(3));
+    expect(
+      find.text('Sleep quality: 5 / 5 • ${formatDate(now)}'),
+      findsOneWidget,
+    );
+    expect(find.text('HRV: 68 ms • ${formatDate(now)}'), findsOneWidget);
+    expect(
+      tester
+          .widgetList<ProgressBar>(find.byType(ProgressBar))
+          .map((bar) => bar.value),
+      [.9375, .75, .75],
+    );
+
+    await wellness.update({'mood': 3});
+    await tester.pumpAndSettle();
+    _expectScore(tester, 73, Colors.green);
+    expect(
+      find.descendant(
+        of: find.byType(RecoveryScoreRing),
+        matching: find.text('High'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('50% • 12.5 / 25 points'), findsOneWidget);
+    expect(find.text('Recorded ${formatDate(now)}'), findsNWidgets(4));
+    await _tap(tester, find.byType(BackButton));
+    _expectScore(tester, 73, Colors.green);
+
+    await sleep.update({'hours': 6});
+    await tester.pumpAndSettle();
+    _expectScore(tester, 69, Colors.amber);
+    expect(find.text('Moderate'), findsWidgets);
+    await wellness.update({'energy': 1, 'soreness': 5, 'mood': 1});
+    await tester.pumpAndSettle();
+    _expectScore(tester, 19, Colors.red);
+    expect(find.text('Low'), findsWidgets);
+
+    await _tap(tester, find.text('View Details'));
+    _expectScore(tester, 19, Colors.red);
+    await wellness.delete();
+    await tester.pumpAndSettle();
+    _expectScore(tester, null, Colors.grey);
+    expect(find.text('6.0 hr / 8 hr'), findsOneWidget);
+    expect(find.text('Not logged'), findsNWidgets(3));
+    expect(find.textContaining('HRV:'), findsNothing);
+    await sleep.delete();
+    await tester.pumpAndSettle();
+    expect(find.text('Not logged'), findsNWidgets(4));
+    expect(find.byType(ProgressBar), findsNothing);
+    await _tap(tester, find.byType(BackButton));
+    expect(find.text('No sleep logged for last night'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+    'Editing notes on a partial wellness record keeps ratings missing',
+    (tester) async {
+      await _tallViewport(tester);
+      final firestore = await _openRecovery(tester);
+      final record = firestore.doc('users/$_uid/wellness/partial');
+      await record.set({'date': DateTime.now().toIso8601String(), 'energy': 4});
+      await tester.pumpAndSettle();
+      await _tap(tester, _tab('Wellness'));
+      expect(find.text('Energy 4  •  Soreness —  •  Mood —'), findsOneWidget);
+      await _tap(tester, find.byType(EntryTile));
+      final controls = tester.widgetList<SegmentedButton<int>>(
+        find.byType(SegmentedButton<int>),
+      );
+      expect(controls.map((control) => control.selected), [
+        {4},
+        <int>{},
+        <int>{},
+      ]);
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Notes (optional)'),
+        'Updated note',
+      );
+      await _tap(tester, find.widgetWithText(FilledButton, 'Save'));
+      final data = (await record.get()).data()!;
+      expect(data['notes'], 'Updated note');
+      expect(data['energy'], 4);
+      expect(data.containsKey('soreness'), isFalse);
+      expect(data.containsKey('mood'), isFalse);
+      await _tap(tester, _tab('Overview'));
+      _expectScore(tester, null, Colors.grey);
+      expect(find.text('4 / 5'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('Empty Overview keeps the cards and hides sample activity', (
+    tester,
+  ) async {
+    await _tallViewport(tester);
+    await _openRecovery(tester);
+
+    expect(find.text('No sleep logged for last night'), findsOneWidget);
+    expect(find.text('Goal: 8 hr'), findsOneWidget);
+    expect(find.text('No recovery notes yet.'), findsOneWidget);
+    expect(find.text('Checklist unavailable'), findsOneWidget);
+    expect(find.text('Avg Sleep'), findsOneWidget);
+    expect(find.text('Avg HRV'), findsOneWidget);
+    expect(find.text('Mobility / Stretching'), findsOneWidget);
+    expect(find.text('View Details'), findsOneWidget);
+    final ring = tester.widget<CircularProgressIndicator>(
+      find.byType(CircularProgressIndicator),
+    );
+    expect(ring.value, 0);
+    expect(ring.color, Colors.grey);
+    for (final sample in [
+      '7 hr 30 min',
+      '82',
+      '68 ms',
+      '3 of 5 completed',
+      'Feeling good',
+      '7.2 hr',
+    ]) {
+      expect(find.text(sample), findsNothing);
+    }
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, 'View Details'))
+          .onPressed,
+      isNotNull,
+    );
+    await _tap(tester, _recentNotesLink());
+    expect(
+      find.text('No notes yet. Tap Add Note to write one.'),
+      findsOneWidget,
+    );
+    expect(find.text('Sleep Last Night'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+    'Overview follows wake-up dates, latest notes, edits and deletes',
+    (tester) async {
+      await _tallViewport(tester);
+      final firestore = await _openRecovery(tester);
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final previousDay = DateTime(now.year, now.month, now.day - 1);
+      final owner = firestore.collection('users').doc(_uid);
+      final sleep = owner.collection('sleep');
+      final notes = owner.collection('recovery_notes');
+      await sleep.doc('older').set({
+        'date': previousDay.toIso8601String(),
+        'hours': 6,
+      });
+      await sleep.doc('bad-date').set({'date': 'invalid', 'hours': 10});
+      await sleep.doc('bad-hours').set({
+        'date': today.toIso8601String(),
+        'hours': double.nan,
+      });
+      await sleep.doc('future-day').set({
+        'date': DateTime(now.year, now.month, now.day + 1).toIso8601String(),
+        'hours': 10,
+      });
+      await notes.doc('older').set({
+        'date': previousDay.toIso8601String(),
+        'title': 'Older note',
+        'body': 'Older text',
+      });
+      await notes.doc('bad-date').set({'date': '', 'title': 'Undated note'});
+      await tester.pumpAndSettle();
+      expect(find.text('No sleep logged for last night'), findsOneWidget);
+      expect(find.text('Older note'), findsOneWidget);
+      expect(find.text('Undated note'), findsNothing);
+
+      final latestSleep = sleep.doc('today');
+      final latestNote = notes.doc('today');
+      await latestSleep.set({
+        'date': today.toUtc().toIso8601String(),
+        'hours': 7.5,
+      });
+      await latestNote.set({
+        'date': today.toIso8601String(),
+        'title': 'Latest note',
+        'body': 'Actual recovery note',
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('7 hr 30 min'), findsOneWidget);
+      expect(find.text('Latest note'), findsOneWidget);
+      expect(find.text('Actual recovery note'), findsOneWidget);
+      expect(find.text(formatDate(today)), findsOneWidget);
+      expect(find.text('Older note'), findsNothing);
+      expect(
+        tester
+            .widgetList<ProgressBar>(find.byType(ProgressBar))
+            .map((bar) => bar.value),
+        contains(7.5 / 8),
+      );
+
+      await latestSleep.update({'hours': 9});
+      await latestNote.update({'title': 'Edited note'});
+      await tester.pumpAndSettle();
+      expect(find.text('9 hr 0 min'), findsOneWidget);
+      expect(find.text('Edited note'), findsOneWidget);
+      expect(
+        tester
+            .widgetList<ProgressBar>(find.byType(ProgressBar))
+            .map((bar) => bar.value),
+        contains(1.0),
+      );
+      await latestSleep.delete();
+      await latestNote.delete();
+      await tester.pumpAndSettle();
+      expect(find.text('No sleep logged for last night'), findsOneWidget);
+      expect(find.text('Older note'), findsOneWidget);
+
+      final screen = tester.widget<RecoveryScreen>(find.byType(RecoveryScreen));
+      screen.sleep!.bind('other-account');
+      screen.notes!.bind('other-account');
+      await screen.settings!.bind('other-account');
+      await tester.pumpAndSettle();
+      expect(find.text('No recovery notes yet.'), findsOneWidget);
+      expect(find.text('Older note'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('Saving settings updates both Overview and Sleep, and persists', (
+    tester,
+  ) async {
+    await _tallViewport(tester);
+    final firestore = await _openRecovery(tester);
+    final preferences = firestore.doc('users/$_uid/settings/recovery');
+    final now = DateTime.now();
+    await firestore.doc('users/$_uid/sleep/night').set({
+      'date': now.toIso8601String(),
+      'hours': 7.5,
+    });
+    await tester.pumpAndSettle();
+    await _tap(tester, find.byIcon(Icons.settings));
+    expect(find.text('Recovery Settings'), findsOneWidget);
+    final save = find.widgetWithText(FilledButton, 'Save Settings');
+    await tester.enterText(_goalInput(), 'NaN');
+    await _tap(tester, save);
+    expect(
+      find.text('Enter a sleep goal between 1 and 24 hours'),
+      findsOneWidget,
+    );
+    expect((await preferences.get()).exists, isFalse);
+
+    await tester.enterText(_goalInput(), '7.5');
+    await _tap(tester, find.byType(SwitchListTile));
+    await _tap(tester, save);
+    expect(find.text('Recovery settings saved'), findsOneWidget);
+    expect(find.text('Goal: 7.5 hr'), findsOneWidget);
+    expect(find.text('Hidden'), findsOneWidget);
+    expect((await preferences.get()).data(), {
+      'sleepGoalHours': 7.5,
+      'showHrv': false,
+    });
+    await _tap(tester, _tab('Sleep'));
+    expect(find.textContaining('Goal: 7.5 hr'), findsOneWidget);
+    expect(tester.widget<ProgressBar>(find.byType(ProgressBar)).value, 1);
+
+    await _tap(tester, find.byIcon(Icons.settings));
+    expect(
+      tester.widget<SwitchListTile>(find.byType(SwitchListTile)).value,
+      isFalse,
+    );
+    await _tap(tester, find.byType(BackButton));
+    expect(find.text('Last sleep'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('Denied settings save keeps the draft and the old sleep goal', (
+    tester,
+  ) async {
+    final firestore = FakeFirebaseFirestore(
+      securityRules: '''
+      service cloud.firestore {
+        match /databases/{database}/documents {
+          match /users/{uid}/settings/recovery {
+            allow read: if true;
+            allow write: if false;
+          }
+        }
+      }
+    ''',
+    );
+    await _openRecovery(tester, database: firestore);
+    await _tap(tester, find.byIcon(Icons.settings));
+    await tester.enterText(_goalInput(), '9');
+    await _tap(tester, find.widgetWithText(FilledButton, 'Save Settings'));
+    expect(
+      find.text('Could not save recovery settings. Please try again.'),
+      findsOneWidget,
+    );
+    expect(find.text('9'), findsOneWidget);
+    expect(find.text('Recovery settings saved'), findsNothing);
+    await _tap(tester, find.byType(BackButton));
+    expect(find.text('Goal: 8 hr'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+    'Overview distinguishes loading, record errors and settings errors',
+    (tester) async {
+      await _tallViewport(tester);
+      final firestore = FakeFirebaseFirestore(
+        securityRules: '''
+      service cloud.firestore {
+        match /databases/{database}/documents {
+          match /users/{uid}/{document=**} {
+            allow read: if false;
+          }
+        }
+      }
+    ''',
+      );
+      await _openRecovery(tester, database: firestore);
+      final screen = tester.widget<RecoveryScreen>(find.byType(RecoveryScreen));
+      expect(find.text('Could not load recovery settings.'), findsOneWidget);
+      expect(find.text('Goal: 8 hr'), findsNothing);
+      screen.sleep!.loading = true;
+      screen.notes!.loading = true;
+      await _tap(tester, _tab('Wellness'));
+      await _tap(tester, _tab('Overview'));
+      expect(find.text('Loading sleep…'), findsOneWidget);
+      expect(find.text('Loading recovery notes…'), findsOneWidget);
+      await _tap(tester, find.text('View Details'));
+      expect(find.text('Loading recovery measurements…'), findsOneWidget);
+      await _tap(tester, find.byType(BackButton));
+      screen.sleep!.loading = false;
+      screen.notes!.loading = false;
+      screen.sleep!.error = 'Sleep records unavailable.';
+      screen.notes!.error = 'Note records unavailable.';
+      await _tap(tester, _tab('Wellness'));
+      await _tap(tester, _tab('Overview'));
+      expect(find.text('Sleep records unavailable.'), findsOneWidget);
+      expect(find.text('Note records unavailable.'), findsOneWidget);
+      expect(find.text('No recovery notes yet.'), findsNothing);
+      await _tap(tester, find.text('View Details'));
+      expect(find.text('Sleep records unavailable.'), findsOneWidget);
+      expect(find.text('Could not load recovery settings.'), findsOneWidget);
+      _expectScore(tester, null, Colors.grey);
+      await _tap(tester, find.byType(BackButton));
+
+      await _tap(tester, find.byIcon(Icons.settings));
+      expect(find.text('Could not load recovery settings.'), findsOneWidget);
+      expect(_goalInput(), findsNothing);
+      await _tap(tester, find.text('Try again'));
+      expect(find.text('Could not load recovery settings.'), findsOneWidget);
+      await screen.settings!.bind(null);
+      await tester.pumpAndSettle();
+      expect(find.text('Sign in to edit recovery settings.'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
   const cases = [
     (
       tab: 'Sleep',

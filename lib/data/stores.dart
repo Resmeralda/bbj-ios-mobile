@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/health_models.dart';
 import 'collection_store.dart';
+import 'recovery_settings_store.dart';
 
 int _newestFirst(DateTime a, DateTime b) => b.compareTo(a);
 
@@ -119,4 +120,5 @@ void bindUserData(String? uid) {
   wellnessStore.bind(uid);
   noteStore.bind(uid);
   goalsStore.bind(uid);
+  unawaited(recoverySettingsStore.bind(uid));
 }

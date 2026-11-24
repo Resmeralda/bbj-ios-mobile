@@ -84,12 +84,18 @@ class SheetTitle extends StatelessWidget {
 class DateField extends StatelessWidget {
   final DateTime date;
   final ValueChanged<DateTime> onChanged;
-  const DateField({super.key, required this.date, required this.onChanged});
+  final String label;
+  const DateField({
+    super.key,
+    required this.date,
+    required this.onChanged,
+    this.label = 'Date',
+  });
 
   @override
   Widget build(BuildContext context) => ListTile(
     contentPadding: EdgeInsets.zero,
-    title: const Text('Date'),
+    title: Text(label),
     subtitle: Text(formatDate(date)),
     trailing: const Icon(Icons.calendar_month),
     onTap: () async {
@@ -107,7 +113,7 @@ class DateField extends StatelessWidget {
 /// 1-5 selector with a caption for each end.
 class RatingPicker extends StatelessWidget {
   final String label, low, high;
-  final int value;
+  final int? value;
   final ValueChanged<int> onChanged;
   const RatingPicker({
     super.key,
@@ -132,7 +138,8 @@ class RatingPicker extends StatelessWidget {
             for (var i = 1; i <= 5; i++)
               ButtonSegment<int>(value: i, label: Text('$i')),
           ],
-          selected: {value},
+          emptySelectionAllowed: value == null,
+          selected: {?value},
           onSelectionChanged: (s) => onChanged(s.first),
         ),
         Row(

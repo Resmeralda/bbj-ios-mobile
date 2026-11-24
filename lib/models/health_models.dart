@@ -1,5 +1,10 @@
 DateTime _date(Object? v) =>
     DateTime.tryParse(v is String ? v : '') ?? DateTime.now();
+DateTime _recoveryDate(Object? value) =>
+    DateTime.tryParse(value is String ? value : '') ??
+    (throw const FormatException('Recovery record has no valid date.'));
+int? _recoveryRating(Object? value) =>
+    value is int && value >= 1 && value <= 5 ? value : null;
 double _num(Object? v, [double d = 0]) => (v as num?)?.toDouble() ?? d;
 int _int(Object? v, [int d = 0]) => (v as num?)?.toInt() ?? d;
 String _str(Object? v) => v is String ? v : '';
@@ -148,10 +153,13 @@ class NutritionGoals {
 
 /// users/{uid}/sleep/{id}
 class SleepEntry {
+  static bool validHours(double? hours) =>
+      hours != null && hours.isFinite && hours > 0 && hours <= 24;
+
   final String id;
   final DateTime date;
   final double hours;
-  final int quality; // 1-5
+  final int? quality; // 1-5, when recorded
   final String notes;
   const SleepEntry({
     required this.id,
@@ -161,29 +169,38 @@ class SleepEntry {
     required this.notes,
   });
 
-  factory SleepEntry.fromMap(String id, Map<String, dynamic> m) => SleepEntry(
-    id: id,
-    date: _date(m['date']),
-    hours: _num(m['hours']),
-    quality: _int(m['quality'], 3),
-    notes: _str(m['notes']),
-  );
+  factory SleepEntry.fromMap(String id, Map<String, dynamic> m) {
+    final hours = _num(m['hours']);
+    if (!validHours(hours)) {
+      throw const FormatException('Sleep record has no valid duration.');
+    }
+    return SleepEntry(
+      id: id,
+      date: _recoveryDate(m['date']),
+      hours: hours,
+      quality: _recoveryRating(m['quality']),
+      notes: _str(m['notes']),
+    );
+  }
 
   Map<String, dynamic> toMap() => {
     'date': date.toIso8601String(),
     'hours': hours,
-    'quality': quality,
+    if (quality != null) 'quality': quality,
     'notes': notes,
   };
 }
 
 /// users/{uid}/wellness/{id}
 class WellnessEntry {
+  static bool validHrv(double? value) =>
+      value != null && value.isFinite && value >= 1 && value <= 300;
+
   final String id;
   final DateTime date;
-  final int energy; // 1-5
-  final int soreness; // 1-5
-  final int mood; // 1-5
+  final int? energy; // 1-5, when recorded
+  final int? soreness; // 1-5, when recorded
+  final int? mood; // 1-5, when recorded
   final int? hrv; // optional, in ms
   final String notes;
   const WellnessEntry({
@@ -196,22 +213,24 @@ class WellnessEntry {
     this.hrv,
   });
 
-  factory WellnessEntry.fromMap(String id, Map<String, dynamic> m) =>
-      WellnessEntry(
-        id: id,
-        date: _date(m['date']),
-        energy: _int(m['energy'], 3),
-        soreness: _int(m['soreness'], 3),
-        mood: _int(m['mood'], 3),
-        hrv: (m['hrv'] as num?)?.toInt(),
-        notes: _str(m['notes']),
-      );
+  factory WellnessEntry.fromMap(String id, Map<String, dynamic> m) {
+    final hrv = m['hrv'];
+    return WellnessEntry(
+      id: id,
+      date: _recoveryDate(m['date']),
+      energy: _recoveryRating(m['energy']),
+      soreness: _recoveryRating(m['soreness']),
+      mood: _recoveryRating(m['mood']),
+      hrv: hrv is int && validHrv(hrv.toDouble()) ? hrv : null,
+      notes: _str(m['notes']),
+    );
+  }
 
   Map<String, dynamic> toMap() => {
     'date': date.toIso8601String(),
-    'energy': energy,
-    'soreness': soreness,
-    'mood': mood,
+    if (energy != null) 'energy': energy,
+    if (soreness != null) 'soreness': soreness,
+    if (mood != null) 'mood': mood,
     if (hrv != null) 'hrv': hrv,
     'notes': notes,
   };
@@ -233,7 +252,7 @@ class RecoveryNote {
   factory RecoveryNote.fromMap(String id, Map<String, dynamic> m) =>
       RecoveryNote(
         id: id,
-        date: _date(m['date']),
+        date: _recoveryDate(m['date']),
         title: _str(m['title']),
         body: _str(m['body']),
       );

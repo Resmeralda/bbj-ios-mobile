@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/collection_store.dart';
 import '../models/health_models.dart';
+import '../models/recovery_settings.dart';
 import '../models/training_session.dart' show formatDate;
 import '../theme.dart';
 import '../widgets/common.dart';
@@ -22,17 +23,20 @@ void showAddRecoveryNoteForm(
   CollectionStore<RecoveryNote> store,
 ) => showFormSheet(context, _NoteForm(store: store));
 
-const _sleepGoalHours = 8.0;
-
 double _avg(Iterable<int> v) =>
     v.isEmpty ? 0 : v.reduce((a, b) => a + b) / v.length;
 
 // ───────────────────────── Sleep ─────────────────────────
 
 class RecoverySleepTab extends StatelessWidget {
-  const RecoverySleepTab({super.key, required this.store});
+  const RecoverySleepTab({
+    super.key,
+    required this.store,
+    required this.settings,
+  });
 
   final CollectionStore<SleepEntry> store;
+  final RecoverySettings? settings;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -67,16 +71,22 @@ class RecoverySleepTab extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                ProgressBar(
-                  last == null ? 0 : last.hours / _sleepGoalHours,
-                  AppColors.recovery,
-                ),
+                if (last != null && settings != null)
+                  ProgressBar(
+                    (last.hours / settings!.sleepGoalHours)
+                        .clamp(0.0, 1.0)
+                        .toDouble(),
+                    AppColors.recovery,
+                  ),
                 const SizedBox(height: 4),
                 Text(
-                  avg == null
-                      ? 'Goal: ${_sleepGoalHours.round()} hr'
-                      : 'Goal: ${_sleepGoalHours.round()} hr  •  '
-                            '${week.length}-entry average: ${hoursLabel(avg)}',
+                  [
+                    settings == null
+                        ? 'Goal unavailable'
+                        : 'Goal: ${settings!.sleepGoalLabel}',
+                    if (avg != null)
+                      '${week.length}-entry average: ${hoursLabel(avg)}',
+                  ].join('  •  '),
                   style: const TextStyle(fontSize: 12, color: AppColors.muted),
                 ),
               ],
@@ -95,7 +105,9 @@ class RecoverySleepTab extends StatelessWidget {
               icon: Icons.nightlight_round,
               color: AppColors.recovery,
               title: hoursLabel(e.hours),
-              subtitle: '${formatDate(e.date)}  •  Quality ${e.quality}/5',
+              subtitle: e.quality == null
+                  ? formatDate(e.date)
+                  : '${formatDate(e.date)}  •  Quality ${e.quality}/5',
               extra: e.notes,
               onTap: () =>
                   showFormSheet(context, _SleepForm(store: store, existing: e)),
@@ -123,7 +135,7 @@ class _SleepFormState extends State<_SleepForm> {
   final _key = GlobalKey<FormState>();
   late final TextEditingController hours, notes;
   late DateTime date;
-  late int quality;
+  late int? quality;
 
   @override
   void initState() {
@@ -132,7 +144,7 @@ class _SleepFormState extends State<_SleepForm> {
     hours = TextEditingController(text: e == null ? '' : e.hours.toString());
     notes = TextEditingController(text: e?.notes ?? '');
     date = e?.date ?? DateTime.now();
-    quality = e?.quality ?? 3;
+    quality = e == null ? 3 : e.quality;
   }
 
   @override
@@ -144,9 +156,7 @@ class _SleepFormState extends State<_SleepForm> {
 
   String? _hoursValidator(String? v) {
     final n = double.tryParse(v ?? '');
-    return (n == null || n <= 0 || n > 24)
-        ? 'Enter hours between 0 and 24'
-        : null;
+    return !SleepEntry.validHours(n) ? 'Enter hours between 0 and 24' : null;
   }
 
   void _save() {
@@ -171,7 +181,11 @@ class _SleepFormState extends State<_SleepForm> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SheetTitle(widget.existing == null ? 'Log sleep' : 'Edit sleep'),
-        DateField(date: date, onChanged: (d) => setState(() => date = d)),
+        DateField(
+          date: date,
+          label: 'Wake-up date',
+          onChanged: (d) => setState(() => date = d),
+        ),
         TextFormField(
           controller: hours,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -217,8 +231,11 @@ class RecoveryWellnessTab extends StatelessWidget {
     builder: (context, _) {
       final entries = store.items; // newest first
       final week = entries.take(7).toList();
-      String avg(int Function(WellnessEntry) f) =>
-          week.isEmpty ? '—' : oneDecimal(_avg(week.map(f)));
+      String avg(int? Function(WellnessEntry) rating) {
+        final values = week.map(rating).whereType<int>();
+        return values.isEmpty ? '—' : oneDecimal(_avg(values));
+      }
+
       final hrvs = [
         for (final e in week)
           if (e.hrv != null) e.hrv!,
@@ -260,7 +277,7 @@ class RecoveryWellnessTab extends StatelessWidget {
               icon: Icons.favorite,
               color: Colors.red,
               title:
-                  'Energy ${e.energy}  •  Soreness ${e.soreness}  •  Mood ${e.mood}',
+                  'Energy ${e.energy ?? '—'}  •  Soreness ${e.soreness ?? '—'}  •  Mood ${e.mood ?? '—'}',
               subtitle: e.hrv == null
                   ? formatDate(e.date)
                   : '${formatDate(e.date)}  •  HRV ${e.hrv} ms',
@@ -293,7 +310,7 @@ class _WellnessFormState extends State<_WellnessForm> {
   final _key = GlobalKey<FormState>();
   late final TextEditingController notes, hrv;
   late DateTime date;
-  late int energy, soreness, mood;
+  late int? energy, soreness, mood;
 
   @override
   void initState() {
@@ -302,9 +319,9 @@ class _WellnessFormState extends State<_WellnessForm> {
     notes = TextEditingController(text: e?.notes ?? '');
     hrv = TextEditingController(text: e?.hrv == null ? '' : '${e!.hrv}');
     date = e?.date ?? DateTime.now();
-    energy = e?.energy ?? 3;
-    soreness = e?.soreness ?? 3;
-    mood = e?.mood ?? 3;
+    energy = e == null ? 3 : e.energy;
+    soreness = e == null ? 3 : e.soreness;
+    mood = e == null ? 3 : e.mood;
   }
 
   @override
@@ -317,9 +334,7 @@ class _WellnessFormState extends State<_WellnessForm> {
   String? _hrvValidator(String? v) {
     if (v == null || v.trim().isEmpty) return null; // optional
     final n = double.tryParse(v);
-    return (n == null || n <= 0 || n > 300)
-        ? 'Enter HRV between 1 and 300 ms'
-        : null;
+    return !WellnessEntry.validHrv(n) ? 'Enter HRV between 1 and 300 ms' : null;
   }
 
   void _save() {

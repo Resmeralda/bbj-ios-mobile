@@ -1,18 +1,32 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../data/collection_store.dart';
+import '../data/recovery_settings_store.dart';
 import '../data/stores.dart';
 import '../models/health_models.dart';
+import '../models/recovery_score.dart';
+import '../models/training_session.dart' show formatDate;
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/form_helpers.dart';
+import 'recovery_score_widgets.dart';
 import 'recovery_tabs.dart';
 
 class RecoveryScreen extends StatefulWidget {
-  const RecoveryScreen({super.key, this.sleep, this.wellness, this.notes});
+  const RecoveryScreen({
+    super.key,
+    this.sleep,
+    this.wellness,
+    this.notes,
+    this.settings,
+  });
 
   final CollectionStore<SleepEntry>? sleep;
   final CollectionStore<WellnessEntry>? wellness;
   final CollectionStore<RecoveryNote>? notes;
+  final RecoverySettingsStore? settings;
+
   @override
   State<RecoveryScreen> createState() => _RecoveryScreenState();
 }
@@ -21,36 +35,74 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
   int tab = 0;
 
   @override
-  Widget build(BuildContext context) => ScreenScaffold(
-    title: 'Recovery',
-    color: AppColors.recovery,
-    actionIcon: Icons.settings,
-    tabs: const ['Overview', 'Sleep', 'Wellness', 'Notes'],
-    tab: tab,
-    onTab: (i) => setState(() => tab = i),
-    children: switch (tab) {
-      1 => [RecoverySleepTab(store: widget.sleep ?? sleepStore)],
-      2 => [RecoveryWellnessTab(store: widget.wellness ?? wellnessStore)],
-      3 => [RecoveryNotesTab(store: widget.notes ?? noteStore)],
-      _ => _overview(context),
-    },
-  );
+  Widget build(BuildContext context) {
+    final sleep = widget.sleep ?? sleepStore;
+    final wellness = widget.wellness ?? wellnessStore;
+    final notes = widget.notes ?? noteStore;
+    final settings = widget.settings ?? recoverySettingsStore;
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        settings,
+        if (tab == 0) ...[sleep, wellness, notes],
+      ]),
+      builder: (context, _) => ScreenScaffold(
+        title: 'Recovery',
+        color: AppColors.recovery,
+        actionIcon: Icons.settings,
+        onAction: () => context.push('/recovery/settings'),
+        tabs: const ['Overview', 'Sleep', 'Wellness', 'Notes'],
+        tab: tab,
+        onTab: (i) => setState(() => tab = i),
+        children: switch (tab) {
+          1 => [RecoverySleepTab(store: sleep, settings: settings.settings)],
+          2 => [RecoveryWellnessTab(store: wellness)],
+          3 => [RecoveryNotesTab(store: notes)],
+          _ => _overview(context, sleep, wellness, notes, settings),
+        },
+      ),
+    );
+  }
 
-  List<Widget> _overview(BuildContext context) {
+  List<Widget> _overview(
+    BuildContext context,
+    CollectionStore<SleepEntry> sleep,
+    CollectionStore<WellnessEntry> wellness,
+    CollectionStore<RecoveryNote> notes,
+    RecoverySettingsStore settingsStore,
+  ) {
+    final assessment = readRecoveryAssessment(sleep, wellness, settingsStore);
+    final lastNight = assessment.sleep;
+    final settings = settingsStore.settings;
+    final recentNote = notes.items.firstOrNull;
     return [
-      const AppCard(
+      AppCard(
         child: Row(
           children: [
-            Icon(Icons.nightlight_round, color: AppColors.recovery, size: 36),
-            SizedBox(width: 12),
+            const Icon(
+              Icons.nightlight_round,
+              color: AppColors.recovery,
+              size: 36,
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Sleep Last Night', style: TextStyle(fontSize: 12)),
+                  const Text(
+                    'Sleep Last Night',
+                    style: TextStyle(fontSize: 12),
+                  ),
                   Text(
-                    '7 hr 30 min',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                    sleep.loading
+                        ? 'Loading sleep…'
+                        : sleep.error ??
+                              (lastNight == null
+                                  ? 'No sleep logged for last night'
+                                  : hoursLabel(lastNight.hours)),
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -60,57 +112,74 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text('Goal: 8 hr', style: TextStyle(fontSize: 12)),
-                  ProgressBar(7.5 / 8, AppColors.recovery),
+                  Text(
+                    settingsStore.loading
+                        ? 'Loading goal…'
+                        : settingsStore.error ??
+                              (settings == null
+                                  ? 'Goal unavailable'
+                                  : 'Goal: ${settings.sleepGoalLabel}'),
+                    textAlign: TextAlign.end,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  if (lastNight != null &&
+                      settings != null &&
+                      sleep.error == null)
+                    ProgressBar(
+                      (lastNight.hours / settings.sleepGoalHours)
+                          .clamp(0.0, 1.0)
+                          .toDouble(),
+                      AppColors.recovery,
+                    )
+                  else
+                    const SizedBox(height: 8),
                 ],
               ),
             ),
           ],
         ),
       ),
-      const SectionHeader('Recovery Score', action: 'View Details'),
+      SectionHeader(
+        'Recovery Score',
+        action: 'View Details',
+        onAction: () => context.push('/recovery/details'),
+      ),
       AppCard(
         child: Row(
           children: [
-            SizedBox(
-              width: 120,
-              height: 120,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  const SizedBox.expand(
-                    child: CircularProgressIndicator(
-                      value: 0.82,
-                      strokeWidth: 12,
-                      color: Colors.green,
-                      backgroundColor: Colors.black12,
-                    ),
-                  ),
-                  const Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '82',
-                        style: TextStyle(
-                          fontSize: 34,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text('Good', style: TextStyle(color: AppColors.muted)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            RecoveryScoreRing(assessment: assessment),
             const SizedBox(width: 12),
-            const Expanded(
+            Expanded(
               child: Column(
                 children: [
-                  _Metric(Icons.nightlight_round, 'Sleep', '7.5 hr'),
-                  _Metric(Icons.favorite, 'HRV', '68 ms'),
-                  _Metric(Icons.bolt, 'Energy', 'Good'),
-                  _Metric(Icons.accessibility_new, 'Soreness', 'Low'),
-                  _Metric(Icons.emoji_emotions, 'Overall', 'Good'),
+                  for (final component in assessment.components)
+                    _Metric(
+                      switch (component.measure) {
+                        RecoveryMeasure.sleep => Icons.nightlight_round,
+                        RecoveryMeasure.energy => Icons.bolt,
+                        RecoveryMeasure.soreness => Icons.accessibility_new,
+                        RecoveryMeasure.mood => Icons.emoji_emotions,
+                      },
+                      component.measure.label,
+                      recoveryValue(component),
+                    ),
+                  if (assessment.sleepQuality case final quality?)
+                    _Metric(
+                      Icons.bedtime_outlined,
+                      'Sleep quality',
+                      '$quality / 5',
+                    ),
+                  if (settings?.showHrv != false)
+                    _Metric(
+                      Icons.favorite,
+                      'HRV',
+                      assessment.hrv == null ? '—' : '${assessment.hrv} ms',
+                    ),
+                  _Metric(
+                    Icons.insights,
+                    'Overall',
+                    assessment.rating?.label ?? '—',
+                  ),
                 ],
               ),
             ),
@@ -123,14 +192,13 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
             Icons.bed,
             'Log Sleep',
             AppColors.recovery,
-            onTap: () => showLogSleepForm(context, widget.sleep ?? sleepStore),
+            onTap: () => showLogSleepForm(context, sleep),
           ),
           QuickTile(
             Icons.favorite,
             'Log Wellness',
             Colors.red,
-            onTap: () =>
-                showLogWellnessForm(context, widget.wellness ?? wellnessStore),
+            onTap: () => showLogWellnessForm(context, wellness),
           ),
           const QuickTile(
             Icons.self_improvement,
@@ -141,8 +209,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
             Icons.note_add,
             'Add Note',
             Colors.amber.shade800,
-            onTap: () =>
-                showAddRecoveryNoteForm(context, widget.notes ?? noteStore),
+            onTap: () => showAddRecoveryNoteForm(context, notes),
           ),
         ],
       ),
@@ -161,8 +228,8 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text('3 of 5 completed', style: TextStyle(fontSize: 12)),
-                  ProgressBar(3 / 5, AppColors.recovery),
+                  Text('Checklist unavailable', style: TextStyle(fontSize: 12)),
+                  ProgressBar(0, Colors.grey),
                 ],
               ),
             ),
@@ -170,41 +237,48 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
         ),
       ),
       const SectionHeader('This Week', action: 'View All'),
-      const Row(
+      Row(
         children: [
-          _Trend('7.2 hr', 'Avg Sleep', AppColors.recovery, [
-            7,
-            6,
-            8,
-            7,
-            7.5,
-            6.5,
-            7.5,
-          ]),
-          _Trend('Good', 'Avg Energy', Colors.green, [4, 3, 5, 4, 5, 4, 5]),
-          _Trend('Low', 'Avg Soreness', Colors.orange, [4, 5, 3, 2, 1, 2, 1]),
-          _Trend('68 ms', 'Avg HRV', Colors.blue, [60, 65, 70, 68, 72, 66, 68]),
+          const _Trend('Avg Sleep'),
+          const _Trend('Avg Energy'),
+          const _Trend('Avg Soreness'),
+          _Trend('Avg HRV', hidden: settings?.showHrv == false),
         ],
       ),
-      const SectionHeader('Recent Notes', action: 'View All'),
-      const AppCard(
+      SectionHeader(
+        'Recent Notes',
+        action: 'View All',
+        onAction: () => setState(() => tab = 3),
+      ),
+      AppCard(
         child: Row(
           children: [
-            Icon(Icons.description, color: AppColors.recovery, size: 32),
-            SizedBox(width: 12),
+            const Icon(Icons.description, color: AppColors.recovery, size: 32),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Tue, Apr 15',
-                    style: TextStyle(fontSize: 12, color: AppColors.muted),
-                  ),
-                  Text(
-                    'Feeling good',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  Text('Slept well, light soreness. Did some stretching.'),
+                  if (notes.loading)
+                    const Text('Loading recovery notes…')
+                  else if (notes.error case final error?)
+                    Text(error)
+                  else if (recentNote == null)
+                    const Text('No recovery notes yet.')
+                  else ...[
+                    Text(
+                      formatDate(recentNote.date.toLocal()),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                    Text(
+                      recentNote.title,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    Text(recentNote.body),
+                  ],
                 ],
               ),
             ),
@@ -227,8 +301,12 @@ class _Metric extends StatelessWidget {
       children: [
         Icon(icon, size: 20, color: AppColors.recovery),
         const SizedBox(width: 8),
-        Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-        const Spacer(),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
         Text(value, style: const TextStyle(color: AppColors.muted)),
       ],
     ),
@@ -236,14 +314,13 @@ class _Metric extends StatelessWidget {
 }
 
 class _Trend extends StatelessWidget {
-  final String value, label;
-  final Color color;
-  final List<double> data;
-  const _Trend(this.value, this.label, this.color, this.data);
+  const _Trend(this.label, {this.hidden = false});
+
+  final String label;
+  final bool hidden;
 
   @override
   Widget build(BuildContext context) {
-    final max = data.reduce((a, b) => a > b ? a : b);
     return Expanded(
       child: Card(
         color: Colors.white,
@@ -253,29 +330,20 @@ class _Trend extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text(
+                hidden ? 'Hidden' : '—',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
               Text(
                 label,
                 style: const TextStyle(fontSize: 10, color: AppColors.muted),
               ),
               const SizedBox(height: 8),
-              SizedBox(
+              const SizedBox(
                 height: 36,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    for (final d in data)
-                      Expanded(
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 1),
-                          height: 36 * d / max,
-                          decoration: BoxDecoration(
-                            color: color.withValues(alpha: 0.7),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ),
-                  ],
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Divider(height: 1, color: Colors.black12),
                 ),
               ),
             ],
